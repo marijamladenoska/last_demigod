@@ -1008,6 +1008,8 @@ class Game:
         elif event["kind"] == "summon":
             for _ in range(event["count"]):
                 shadow = Shadow(self.level["enemy_speed"], 15, self.images.get("shadow.png"))
+                ghost = random.choice(["spiritoso", "spiritosa"])
+                shadow.anim = self.get_animation("shadow", ghost, ENEMY_SPRITE_HEIGHT)
                 offset = pygame.Vector2(random.randint(-60, 60), random.randint(-60, 60))
                 shadow.pos = self.boss.pos + offset
                 self.enemies.append(shadow)
