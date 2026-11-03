@@ -217,7 +217,7 @@ def move_with_walls(pos, step, walls, hitbox):
 
 
 class Enemy:
-    def __init__(self, speed, hp):
+    def __init__(self, speed, hp, sprite=None, color=RED):
         # spawn just outside a random screen edge
         side = random.choice("tblr")
         if side == "t":
@@ -232,6 +232,8 @@ class Enemy:
         self.speed = speed
         self.hp = hp
         self.damage = 10
+        self.sprite = sprite    # picture to draw instead of a colored circle
+        self.color = color
 
     def hitbox(self, pos=None):
         pos = pos or self.pos
@@ -245,7 +247,45 @@ class Enemy:
             self.pos = move_with_walls(self.pos, step, walls, self.hitbox)
 
     def draw(self, screen):
-        pygame.draw.circle(screen, RED, self.pos, self.radius)
+        if self.sprite:
+            screen.blit(self.sprite, self.sprite.get_rect(center=self.pos))
+        else:
+            pygame.draw.circle(screen, self.color, self.pos, self.radius)
+
+
+class Skeleton(Enemy):
+    """The common enemy: walks straight at you, nothing fancy."""
+
+    def __init__(self, speed, hp, sprite=None):
+        super().__init__(speed, hp, sprite, color=(225, 220, 195))
+
+
+class Shadow(Enemy):
+    """Fast and fragile - rushes in quickly but dies in a hit or two."""
+
+    def __init__(self, speed, hp, sprite=None):
+        super().__init__(speed * 1.6, max(6, int(hp * 0.5)), sprite, color=(90, 60, 130))
+        self.radius = 10
+
+
+class Harpy(Enemy):
+    """Flies, so it ignores ground walls, and zigzags instead of flying straight in."""
+
+    def __init__(self, speed, hp, sprite=None):
+        super().__init__(speed, hp, sprite, color=(210, 130, 60))
+        self.wobble_t = random.uniform(0, 10)
+
+    def update(self, dt, target, walls=()):
+        self.wobble_t += dt
+        direction = target - self.pos
+        if direction.length() == 0:
+            return
+        direction = direction.normalize()
+        perpendicular = pygame.Vector2(-direction.y, direction.x)
+        wobble = perpendicular * math.sin(self.wobble_t * 6) * 0.6
+        move_dir = direction + wobble
+        if move_dir.length() > 0:
+            self.pos += move_dir.normalize() * self.speed * dt
 
 
 class Guard(Enemy):
@@ -488,8 +528,20 @@ class Game:
             step = self.difficulty_step()
             speed = self.level["enemy_speed"] + 25 * step + random.randint(0, 20)
             for _ in range(1 + step):
-                self.enemies.append(Enemy(speed, hp=20))
+                self.enemies.append(self.make_enemy(speed, step))
             self.spawn_timer = max(0.5, self.level["spawn_delay"] - 0.25 * step)
+
+    def make_enemy(self, speed, step):
+        """Pick an enemy type. Skeletons are the baseline; shadows and harpies
+        become more common later in the fight and in later levels."""
+        rarity = step + self.level_index * 2
+        weights = {"skeleton": 5, "shadow": 1 + rarity, "harpy": rarity}
+        kind = random.choices(list(weights), weights=list(weights.values()))[0]
+        if kind == "skeleton":
+            return Skeleton(speed, 20, self.images.get("skeleton.png"))
+        if kind == "shadow":
+            return Shadow(speed, 20, self.images.get("shadow.png"))
+        return Harpy(speed, 20, self.images.get("harpy.png"))
 
     # ---- weapons ----
     def zeus_lightning(self):
