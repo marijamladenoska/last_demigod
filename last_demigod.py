@@ -259,6 +259,17 @@ GIFTS = {
     "ambrosia": {"name": "Ambrosia",           "desc": "+20 max HP and heal 40"},
 }
 
+# Each gift's icon, borrowed from the closest-matching Vampire Survivors item.
+GIFT_ICON_FILES = {
+    "zeus": "lightning/pickup.png",
+    "trident": "weapons/santa_javelin.png",
+    "sword": "weapons/night_sword.png",
+    "arrows": "weapons/knife.png",
+    "shield": "weapons/laurel.png",
+    "sandals": "weapons/wings.png",
+    "ambrosia": "weapons/hollow_heart.png",
+}
+
 
 CHARON_LINES = [
     "Few demigods make it this far. Fewer make it further.",
@@ -281,6 +292,8 @@ BOSS_FOLDERS = {"Kampe": "kampe", "Cerberus": "cerberus", "Hera": "hera"}
 
 
 class Player:
+    shield_sprite = None  # Laurel icon, set once by the Game, shared by every Player
+
     def __init__(self, sprite=None, color=WHITE, anim=None):
         self.sprite = sprite          # pygame Surface, or None to draw a circle instead
         self.color = color
@@ -343,7 +356,11 @@ class Player:
 
     def draw(self, screen):
         if self.gift("shield"):
-            pygame.draw.circle(screen, (200, 200, 120), self.pos, self.radius + 6, 2)
+            if self.shield_sprite:
+                badge_pos = self.pos + pygame.Vector2(0, -self.radius - 16)
+                screen.blit(self.shield_sprite, self.shield_sprite.get_rect(center=badge_pos))
+            else:
+                pygame.draw.circle(screen, (200, 200, 120), self.pos, self.radius + 6, 2)
         blink = self.hit_cooldown > 0 and int(self.hit_cooldown * 20) % 2 == 0
         if blink:
             return
@@ -738,7 +755,8 @@ class XPOrb:
 class Projectile:
     """Used by Apollo's arrows and Poseidon's trident."""
 
-    def __init__(self, pos, direction, speed, damage, color, pierce=False, length=14):
+    def __init__(self, pos, direction, speed, damage, color, pierce=False, length=14,
+                 sprite=None, sprite_angle_offset=0):
         self.pos = pygame.Vector2(pos)
         self.vel = direction.normalize() * speed
         self.damage = damage
@@ -746,6 +764,8 @@ class Projectile:
         self.pierce = pierce     # trident goes through enemies
         self.length = length
         self.radius = 6
+        self.sprite = sprite                        # weapon icon, rotated to face self.vel
+        self.sprite_angle_offset = sprite_angle_offset  # the icon's own "pointing" angle
         self.already_hit = []    # so a piercing trident hits each enemy only once
         self.alive = True
 
@@ -755,8 +775,13 @@ class Projectile:
             self.alive = False
 
     def draw(self, screen):
-        tail = self.pos - self.vel.normalize() * self.length
-        pygame.draw.line(screen, self.color, tail, self.pos, 4)
+        if self.sprite:
+            angle = -math.degrees(math.atan2(self.vel.y, self.vel.x)) + self.sprite_angle_offset
+            rotated = pygame.transform.rotate(self.sprite, angle)
+            screen.blit(rotated, rotated.get_rect(center=self.pos))
+        else:
+            tail = self.pos - self.vel.normalize() * self.length
+            pygame.draw.line(screen, self.color, tail, self.pos, 4)
 
 
 class Game:
@@ -806,6 +831,22 @@ class Game:
             img = pygame.image.load(lightning_path).convert_alpha()
             scale = 28 / img.get_height()
             self.lightning_hit_sprite = pygame.transform.scale(img, (max(1, round(img.get_width() * scale)), 28))
+
+        # weapon/pickup icons: one scaled copy per size they're actually used at
+        self.weapon_sprites = {}       # in-play size (projectiles, orbiting sword)
+        self.gift_icons = {}           # small icon size for gift cards
+        for key, rel_path in GIFT_ICON_FILES.items():
+            path = os.path.join(VS_DIR, rel_path)
+            if not os.path.exists(path):
+                continue
+            img = pygame.image.load(path).convert_alpha()
+            play_scale = 26 / max(img.get_width(), img.get_height())
+            self.weapon_sprites[key] = pygame.transform.scale(
+                img, (max(1, round(img.get_width() * play_scale)), max(1, round(img.get_height() * play_scale))))
+            icon_scale = 32 / max(img.get_width(), img.get_height())
+            self.gift_icons[key] = pygame.transform.scale(
+                img, (max(1, round(img.get_width() * icon_scale)), max(1, round(img.get_height() * icon_scale))))
+        Player.shield_sprite = self.gift_icons.get("shield")
 
         try:  # some machines have no audio device - the game should still run
             pygame.mixer.init()
@@ -1108,7 +1149,8 @@ class Game:
             for target in random.sample(targets, min(lvl, len(targets))):
                 direction = target.pos - self.player.pos
                 if direction.length() > 0:
-                    self.projectiles.append(Projectile(self.player.pos, direction, 500, 12, GOLD))
+                    self.projectiles.append(Projectile(self.player.pos, direction, 500, 12, GOLD,
+                                                        sprite=self.weapon_sprites.get("arrows")))
             self.arrow_timer = 1.2
 
     def poseidon_trident(self, dt):
@@ -1118,7 +1160,8 @@ class Game:
         self.trident_timer -= dt
         if self.trident_timer <= 0:
             self.projectiles.append(Projectile(self.player.pos, self.player.facing, 420,
-                                               15 + 8 * lvl, CYAN, pierce=True, length=30))
+                                               15 + 8 * lvl, CYAN, pierce=True, length=30,
+                                               sprite=self.weapon_sprites.get("trident")))
             self.trident_timer = max(0.6, 2.2 - 0.3 * lvl)
 
     def sword_positions(self):
@@ -1414,7 +1457,10 @@ class Game:
             pygame.draw.rect(self.screen, DARK, rect, border_radius=10)
             pygame.draw.rect(self.screen, GOLD, rect, 2, border_radius=10)
             cx = rect.centerx
-            self.draw_text(f"[{i + 1}]", self.font, GOLD, (cx, 250))
+            icon = self.gift_icons.get(key)
+            if icon:
+                self.screen.blit(icon, icon.get_rect(center=(cx, 250)))
+            self.draw_text(f"[{i + 1}]", self.small_font, GOLD, (rect.x + 20, rect.y + 16))
             self.draw_text(GIFTS[key]["name"], self.font, WHITE, (cx, 295))
             self.draw_wrapped_text(GIFTS[key]["desc"], self.small_font, (190, 190, 190),
                                     cx, 328, card_w - 30)
@@ -1573,9 +1619,16 @@ class Game:
             pygame.draw.line(self.screen, GOLD, a, b, 4)
             if self.lightning_hit_sprite:
                 self.screen.blit(self.lightning_hit_sprite, self.lightning_hit_sprite.get_rect(center=b))
+        sword_sprite = self.weapon_sprites.get("sword")
         for blade in self.sword_positions() if self.player.gift("sword") else []:
-            pygame.draw.circle(self.screen, (200, 205, 215), blade, 10)
-            pygame.draw.circle(self.screen, WHITE, blade, 10, 2)
+            if sword_sprite:
+                direction = blade - self.player.pos
+                angle = -math.degrees(math.atan2(direction.y, direction.x))
+                rotated = pygame.transform.rotate(sword_sprite, angle)
+                self.screen.blit(rotated, rotated.get_rect(center=blade))
+            else:
+                pygame.draw.circle(self.screen, (200, 205, 215), blade, 10)
+                pygame.draw.circle(self.screen, WHITE, blade, 10, 2)
         for dn in self.damage_numbers:
             dn.draw(self.screen, self.small_font)
         self.player.draw(self.screen)
