@@ -1,0 +1,20 @@
+{
+  "walk": {
+    "frames": [
+      "walk_0.png",
+      "walk_1.png",
+      "walk_2.png",
+      "walk_3.png",
+      "walk_4.png",
+      "walk_5.png"
+    ],
+    "durations_ms": [
+      140,
+      140,
+      140,
+      140,
+      140,
+      140
+    ]
+  }
+}

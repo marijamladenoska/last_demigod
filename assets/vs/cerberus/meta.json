@@ -1,0 +1,64 @@
+{
+  "walk": {
+    "frames": [
+      "walk_0.png",
+      "walk_1.png",
+      "walk_2.png",
+      "walk_3.png"
+    ],
+    "durations_ms": [
+      140,
+      140,
+      140,
+      140
+    ]
+  },
+  "death": {
+    "frames": [
+      "death_0.png",
+      "death_1.png",
+      "death_2.png",
+      "death_3.png",
+      "death_4.png",
+      "death_5.png",
+      "death_6.png",
+      "death_7.png",
+      "death_8.png",
+      "death_9.png",
+      "death_10.png",
+      "death_11.png",
+      "death_12.png",
+      "death_13.png",
+      "death_14.png",
+      "death_15.png",
+      "death_16.png",
+      "death_17.png",
+      "death_18.png",
+      "death_19.png",
+      "death_20.png"
+    ],
+    "durations_ms": [
+      140,
+      140,
+      140,
+      140,
+      140,
+      140,
+      140,
+      140,
+      140,
+      140,
+      140,
+      140,
+      140,
+      140,
+      140,
+      140,
+      140,
+      140,
+      140,
+      140,
+      140
+    ]
+  }
+}

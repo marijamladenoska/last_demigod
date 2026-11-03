@@ -1,0 +1,30 @@
+{
+  "spiritoso": {
+    "frames": [
+      "spiritoso_0.png",
+      "spiritoso_1.png",
+      "spiritoso_2.png",
+      "spiritoso_3.png"
+    ],
+    "durations_ms": [
+      140,
+      140,
+      140,
+      140
+    ]
+  },
+  "spiritosa": {
+    "frames": [
+      "spiritosa_0.png",
+      "spiritosa_1.png",
+      "spiritosa_2.png",
+      "spiritosa_3.png"
+    ],
+    "durations_ms": [
+      140,
+      140,
+      140,
+      140
+    ]
+  }
+}
