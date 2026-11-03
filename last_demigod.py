@@ -33,6 +33,16 @@ SPRITE_FILES = [
 # Sound effects and music both live in assets/sounds/, and both are optional -
 # the game just plays silently if a file is missing.
 SOUND_DIR = os.path.join(ASSET_DIR, "sounds")
+
+# Pixel font for all UI text (menus, HUD, gift cards). Falls back to the
+# system default font if the .ttf isn't there, so the game never crashes.
+FONT_PATH = os.path.join(ASSET_DIR, "fonts", "PixelifySans-Bold.ttf")
+
+
+def load_pixel_font(size):
+    if os.path.exists(FONT_PATH):
+        return pygame.font.Font(FONT_PATH, size)
+    return pygame.font.SysFont(None, size)
 SOUND_NAMES = ["lightning", "hit", "enemy_death", "xp_pickup", "level_up",
                "gate_open", "boss_spawn", "win", "lose"]
 MUSIC_FILES = {
@@ -752,9 +762,9 @@ class Game:
         self.shake_surface = pygame.Surface((WIDTH, HEIGHT))      # used while screen-shaking
         pygame.display.set_caption("The Last Demigod")
         self.clock = pygame.time.Clock()
-        self.font = pygame.font.SysFont(None, 28)
-        self.small_font = pygame.font.SysFont(None, 22)
-        self.big_font = pygame.font.SysFont(None, 72)
+        self.font = load_pixel_font(28)
+        self.small_font = load_pixel_font(22)
+        self.big_font = load_pixel_font(64)
         self.images = {}
         for name in BACKGROUND_FILES:
             path = os.path.join(ASSET_DIR, name)
@@ -1344,12 +1354,32 @@ class Game:
             text = ("> " + label + " <") if i == self.pause_index else label
             self.draw_text(text, self.font, color, (WIDTH // 2, 280 + i * 50))
 
+    def draw_wrapped_text(self, text, font, color, center_x, top_y, max_width, line_spacing=20):
+        """Splits text onto as many lines as it takes to fit max_width - the
+        pixel font is wider per letter than the old default font, so gift
+        descriptions need this instead of one unbroken line."""
+        words = text.split(" ")
+        lines = []
+        current = ""
+        for word in words:
+            trial = (current + " " + word).strip()
+            if not current or font.size(trial)[0] <= max_width:
+                current = trial
+            else:
+                lines.append(current)
+                current = word
+        if current:
+            lines.append(current)
+        for i, line in enumerate(lines):
+            self.draw_text(line, font, color, (center_x, top_y + i * line_spacing))
+        return len(lines)
+
     def draw_gift_choice(self):
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 170))
         self.screen.blit(overlay, (0, 0))
         self.draw_text("A gift from the gods!", self.big_font, GOLD, (WIDTH // 2, 120))
-        card_w, card_h, gap = 260, 200, 30
+        card_w, card_h, gap = 260, 220, 30
         start_x = WIDTH // 2 - (3 * card_w + 2 * gap) // 2
         for i, key in enumerate(self.choices):
             x = start_x + i * (card_w + gap)
@@ -1359,10 +1389,11 @@ class Game:
             cx = rect.centerx
             self.draw_text(f"[{i + 1}]", self.font, GOLD, (cx, 250))
             self.draw_text(GIFTS[key]["name"], self.font, WHITE, (cx, 295))
-            self.draw_text(GIFTS[key]["desc"], self.small_font, (190, 190, 190), (cx, 335))
+            self.draw_wrapped_text(GIFTS[key]["desc"], self.small_font, (190, 190, 190),
+                                    cx, 328, card_w - 30)
             lvl = self.player.gift(key)
             label = "NEW" if lvl == 0 else f"Level {lvl} -> {lvl + 1}"
-            self.draw_text(label, self.small_font, CYAN, (cx, 380))
+            self.draw_text(label, self.small_font, CYAN, (cx, rect.bottom - 25))
 
     def draw_menu_background(self):
         bg = self.images.get("title_screen.png")
