@@ -2,7 +2,7 @@
 
 A top-down survival game made with pygame. Lightning strikes your cell door, and you
 fight your way up out of the Underworld through three levels, picking up gifts from
-the gods along the way.
+the gods along the way, until you face Hera herself.
 
 ## How to run
 
@@ -13,13 +13,37 @@ python last_demigod.py
 
 ## Controls
 
-- **WASD** or **Arrow keys** — move
+- **W/S** or **Up/Down** arrows — move the highlight in menus
+- **WASD** or **Arrow keys** — move the player in-game
 - Attacks are automatic — you don't need to aim or press anything to attack
 - **1 / 2 / 3** — pick a gift when you level up
 - **P** or **ESC** — pause
-- **M** — mute/unmute sound
+- **M** — mute/unmute sound (works anywhere, and is remembered next time)
 - **ENTER** — confirm on menus, continue after a cutscene/level
 - **F1** — (debug only) show collision walls, off unless `DEBUG = True` in the code
+
+## What's in the game
+
+- **Main menu**: Start, Controls, Settings, Quit
+- **Character select**: play as Leon or Elena
+- **Prologue**: escape a Tartarus prison cell by defeating 2 skeleton guards
+- **Level 1 — Tartar**: boss Kampe, who swings in a wide circle around herself
+- **Level 2 — River Styx**: boss Cerberus, who lunges and breathes fireballs
+- **Level 3 — Gates of the Underworld**: final boss Hera, who throws peacock
+  feathers, summons shadows, and unleashes a wave of divine energy
+- Charon ferries and fully heals you between levels, with a line of advice
+- 3 regular enemy types (skeletons, fast/fragile shadows, zigzagging flying harpies)
+  that mix in more as levels and fights get harder
+- Every boss stands still and takes extra damage for a couple of seconds after its
+  big attack — that's the window to punish it
+- 7 gifts from the gods, each upgradeable 5 times; once everything is maxed, leveling
+  up heals you instead of doing nothing
+- Pause menu (Resume / Restart level / Main menu / Quit), and win/death screens with
+  run stats (level reached, time survived, enemies defeated, gifts taken) and
+  Retry level / Main menu options
+- Hit feedback: floating damage numbers, a white flash and screen shake when you get hit
+- Settings screen: music volume, sound volume, fullscreen — saved to `save.json`
+  along with your best run (furthest level reached, longest survival time)
 
 ## Story
 
@@ -30,9 +54,9 @@ Underworld.
 
 ## Assets
 
-The game runs with simple colored shapes for anything missing from `assets/`, so it
-never crashes if art/sound isn't there yet. Drop in files with these exact names to
-replace the placeholders:
+The game runs with simple colored shapes and silence for anything missing from
+`assets/`, so it never crashes if art/sound isn't there. Drop in files with these
+exact names to replace the placeholders:
 
 **Images** (`assets/`)
 - `title_screen.png` — main menu background
@@ -40,9 +64,12 @@ replace the placeholders:
 - `skeleton.png`, `shadow.png`, `harpy.png` — regular enemies
 - `kampe.png`, `cerberus.png`, `hera.png` — bosses
 - `charon.png` — the ferryman NPC
-- `tartarus_arena.png`, `styx_arena.png`, `gates_arena.png` — level backgrounds (the
-  first already exists)
-- `prison.png` — prologue background (already exists)
+- `tartarus_arena.png` — Level 1 background (**already in the repo**)
+- `styx_arena.png` — Level 2 background (once added, also add wall rects to
+  `STYX_WALLS` near the top of `last_demigod.py`, the same way `TARTARUS_WALLS`
+  was done — turn on `F1` with `DEBUG = True` to line them up against the picture)
+- `gates_arena.png` — Level 3 background (same deal, fill in `GATES_WALLS`)
+- `prison.png` — prologue background (**already in the repo**)
 
 **Sounds** (`assets/sounds/`)
 - `lightning.wav`, `hit.wav`, `enemy_death.wav`, `xp_pickup.wav`, `level_up.wav`,
