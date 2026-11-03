@@ -27,6 +27,18 @@ SPRITE_FILES = [
     "kampe.png", "cerberus.png", "hera.png", "charon.png",
 ]
 
+# Sound effects and music both live in assets/sounds/, and both are optional -
+# the game just plays silently if a file is missing.
+SOUND_DIR = os.path.join(ASSET_DIR, "sounds")
+SOUND_NAMES = ["lightning", "hit", "enemy_death", "xp_pickup", "level_up",
+               "gate_open", "boss_spawn", "win", "lose"]
+MUSIC_FILES = {
+    -1: "music_prison.ogg",   # -1 is the prison prologue (level_index -1)
+    0: "music_level1.ogg",
+    1: "music_level2.ogg",
+    2: "music_level3.ogg",
+}
+
 # Background pictures are 1672 x 941. Wall positions below are written in
 # picture pixels and scaled to the window, so they stay correct at any size.
 IMG_W, IMG_H = 1672, 941
@@ -613,6 +625,23 @@ class Game:
             path = os.path.join(ASSET_DIR, name)
             if os.path.exists(path):  # game still runs with plain shapes if a sprite is missing
                 self.images[name] = pygame.image.load(path).convert_alpha()
+
+        try:  # some machines have no audio device - the game should still run
+            pygame.mixer.init()
+            self.mixer_ok = True
+        except pygame.error:
+            self.mixer_ok = False
+        self.sounds = {}
+        if self.mixer_ok:
+            for name in SOUND_NAMES:
+                path = os.path.join(SOUND_DIR, name + ".wav")
+                if os.path.exists(path):
+                    self.sounds[name] = pygame.mixer.Sound(path)
+        self.music_volume = 0.6
+        self.sound_volume = 0.6
+        self.muted = False
+        self.current_music = None
+
         self.show_walls = DEBUG  # F1 can still toggle this, see handle_key()
         self.prev_state = "playing"
 
@@ -661,6 +690,7 @@ class Game:
         self.player.pos = pygame.Vector2(PRISON_START[0] * SX, PRISON_START[1] * SY)
         self.banner_timer = 3.0
         self.state = "prison"
+        self.play_music(-1)
 
     def update_prison(self, dt):
         p = self.player
@@ -674,10 +704,11 @@ class Game:
             g.update(dt, p.pos, walls)
             if p.pos.distance_to(g.pos) < p.radius + g.radius:
                 self.hit_player(g.damage)
-        self.run_kills += len([g for g in self.enemies if g.hp <= 0])
-        for g in self.enemies:
-            if g.hp <= 0:
-                self.orbs.append(XPOrb(g.pos))
+        dead = [g for g in self.enemies if g.hp <= 0]
+        self.run_kills += len(dead)
+        for g in dead:
+            self.orbs.append(XPOrb(g.pos))
+            self.play_sound("enemy_death")
         self.enemies = [g for g in self.enemies if g.hp > 0]
         self.bolts = [(a, b, t - dt) for a, b, t in self.bolts if t - dt > 0]
         self.collect_orbs(dt)
@@ -685,11 +716,13 @@ class Game:
         if not self.enemies and not self.gate_open:
             self.gate_open = True
             self.banner_timer = 2.5
+            self.play_sound("gate_open")
         if self.gate_open and p.pos.y > PRISON_EXIT_Y * SY:
             self.start_level(0)
         if p.hp <= 0:
             self.end_index = 0
             self.state = "gameover"
+            self.play_sound("lose")
 
     def start_level(self, index):
         self.level_index = index
@@ -710,6 +743,7 @@ class Game:
         self.player.pos = pygame.Vector2(WIDTH / 2, HEIGHT / 2)
         self.banner_timer = 2.5  # shows the level name for a moment
         self.state = "playing"  # playing / paused / choosing / gameover / level_done / win
+        self.play_music(index)
 
     def clear_spawn_x(self, walls):
         """An x position whose path down from the top of the screen isn't
@@ -726,6 +760,7 @@ class Game:
         if self.player.take_damage(amount):
             self.flash_timer = 0.12
             self.shake_timer = 0.2
+            self.play_sound("hit")
 
     def resolve_boss_attack(self, event):
         """Apply whatever a boss's unleash() just set up in attack_event."""
@@ -782,6 +817,7 @@ class Game:
             nearest.apply_damage(dmg)
             self.damage_numbers.append(DamageNumber(nearest.pos, dmg, GOLD))
             self.bolts.append((p.pos.copy(), nearest.pos.copy(), 0.12))
+            self.play_sound("lightning")
             p.attack_timer = p.attack_cooldown * (0.85 ** lvl)
 
     def apollo_arrows(self, dt):
@@ -846,10 +882,12 @@ class Game:
         for orb in collected:
             p.xp += orb.value
             self.orbs.remove(orb)
+            self.play_sound("xp_pickup")
         if p.xp >= p.xp_needed:
             p.xp -= p.xp_needed
             p.level += 1
             p.xp_needed = int(p.xp_needed * 1.5) + 2
+            self.play_sound("level_up")
             self.offer_gifts()
 
     def offer_gifts(self):
@@ -866,6 +904,34 @@ class Game:
     def show_toast(self, text, duration=2.0):
         self.toast_text = text
         self.toast_timer = duration
+
+    def play_sound(self, name):
+        if not self.mixer_ok or self.muted:
+            return
+        sound = self.sounds.get(name)
+        if sound:
+            sound.set_volume(self.sound_volume)
+            sound.play()
+
+    def play_music(self, key):
+        """key is the level_index for the scene that just started (-1 = prison)."""
+        if not self.mixer_ok or key == self.current_music:
+            return
+        self.current_music = key
+        filename = MUSIC_FILES.get(key)
+        path = os.path.join(SOUND_DIR, filename) if filename else None
+        if path and os.path.exists(path):
+            pygame.mixer.music.load(path)
+            pygame.mixer.music.set_volume(0 if self.muted else self.music_volume)
+            pygame.mixer.music.play(-1)
+        else:
+            pygame.mixer.music.stop()
+
+    def toggle_mute(self):
+        self.muted = not self.muted
+        if self.mixer_ok:
+            pygame.mixer.music.set_volume(0 if self.muted else self.music_volume)
+        self.show_toast("Muted" if self.muted else "Unmuted", duration=1.0)
 
     def tick_effects(self, dt):
         """Advance short-lived visual effects: toast text, hit flash/shake, floating numbers."""
@@ -924,10 +990,11 @@ class Game:
                     proj.alive = False
 
         # dead enemies drop XP orbs
-        self.run_kills += len([e for e in self.enemies if e.hp <= 0])
-        for e in self.enemies:
-            if e.hp <= 0:
-                self.orbs.append(XPOrb(e.pos))
+        dead = [e for e in self.enemies if e.hp <= 0]
+        self.run_kills += len(dead)
+        for e in dead:
+            self.orbs.append(XPOrb(e.pos))
+            self.play_sound("enemy_death")
         self.enemies = [e for e in self.enemies if e.hp > 0]
         self.bolts = [(a, b, t - dt) for a, b, t in self.bolts if t - dt > 0]
         self.collect_orbs(dt)
@@ -940,14 +1007,20 @@ class Game:
                 self.boss = BOSS_CLASSES[boss_cfg["name"]](boss_cfg)
                 self.boss.sprite = self.images.get(boss_cfg["name"].lower() + ".png")
                 self.boss.pos.x = self.clear_spawn_x(self.walls)
+                self.play_sound("boss_spawn")
         elif self.boss.hp <= 0:
             self.run_kills += 1
             self.end_index = 0
-            self.state = "level_done" if self.level_index < len(LEVELS) - 1 else "win"
+            if self.level_index < len(LEVELS) - 1:
+                self.state = "level_done"
+            else:
+                self.state = "win"
+                self.play_sound("win")
 
         if p.hp <= 0:
             self.end_index = 0
             self.state = "gameover"
+            self.play_sound("lose")
 
     # ---- drawing ----
     def draw_text(self, text, font, color, center):
@@ -1279,6 +1352,9 @@ class Game:
         self.screen = self.window
 
     def handle_key(self, key):
+        if key == pygame.K_m:
+            self.toggle_mute()
+            return
         if self.state == "menu":
             if key in (pygame.K_UP, pygame.K_w):
                 self.menu_index = self.move_index(self.menu_index, -1, len(self.menu_items))
