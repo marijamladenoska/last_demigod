@@ -1486,7 +1486,7 @@ class Game:
                 self.prev_state = self.state
                 self.pause_index = 0
                 self.state = "paused"
-        if key == pygame.K_F1:
+        if key == pygame.K_F1 and DEBUG:
             self.show_walls = not self.show_walls
         if self.state == "choosing" and key in (pygame.K_1, pygame.K_2, pygame.K_3):
             self.choose_gift(key - pygame.K_1)
