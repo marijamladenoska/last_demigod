@@ -197,11 +197,13 @@ class Player:
         return self.gifts.get(key, 0)
 
     def take_damage(self, amount):
+        """Returns True if the hit actually landed (False during invincibility frames)."""
         if self.hit_cooldown > 0:
-            return
+            return False
         reduction = 0.15 * self.gift("shield")
         self.hp -= amount * (1 - reduction)
         self.hit_cooldown = 0.8
+        return True
 
     def hitbox(self, pos=None):
         pos = pos or self.pos
@@ -526,6 +528,30 @@ class Hera(Boss):
 BOSS_CLASSES = {"Kampe": Kampe, "Cerberus": Cerberus, "Hera": Hera}
 
 
+class DamageNumber:
+    """A small number that pops up and floats away when something gets hit."""
+
+    def __init__(self, pos, amount, color=WHITE):
+        self.pos = pygame.Vector2(pos)
+        self.text = str(int(amount))
+        self.color = color
+        self.age = 0.0
+        self.duration = 0.6
+
+    @property
+    def alive(self):
+        return self.age < self.duration
+
+    def update(self, dt):
+        self.age += dt
+        self.pos.y -= 40 * dt  # float upward as it fades
+
+    def draw(self, screen, font):
+        surf = font.render(self.text, True, self.color)
+        surf.set_alpha(int(255 * max(0, 1 - self.age / self.duration)))
+        screen.blit(surf, surf.get_rect(center=self.pos))
+
+
 class XPOrb:
     def __init__(self, pos, value=1):
         self.pos = pygame.Vector2(pos)
@@ -569,7 +595,9 @@ class Projectile:
 class Game:
     def __init__(self):
         pygame.init()
-        self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        self.window = pygame.display.set_mode((WIDTH, HEIGHT))  # the real OS window
+        self.screen = self.window                                # what draw() draws to
+        self.shake_surface = pygame.Surface((WIDTH, HEIGHT))      # used while screen-shaking
         pygame.display.set_caption("The Last Demigod")
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont(None, 28)
@@ -612,6 +640,9 @@ class Game:
         self.charon_line = ""
         self.toast_text = ""
         self.toast_timer = 0.0
+        self.damage_numbers = []
+        self.flash_timer = 0.0   # white screen flash when the player is hit
+        self.shake_timer = 0.0   # screen shake when the player is hit
         self.start_prison()
 
     # ---- prison prologue ----
@@ -634,7 +665,7 @@ class Game:
     def update_prison(self, dt):
         p = self.player
         self.run_time += dt
-        self.toast_timer -= dt
+        self.tick_effects(dt)
         walls = self.walls + ([] if self.gate_open else [self.gate])
         p.update(dt, pygame.key.get_pressed(), walls)
         self.banner_timer -= dt
@@ -642,7 +673,7 @@ class Game:
         for g in self.enemies:
             g.update(dt, p.pos, walls)
             if p.pos.distance_to(g.pos) < p.radius + g.radius:
-                p.take_damage(g.damage)
+                self.hit_player(g.damage)
         self.run_kills += len([g for g in self.enemies if g.hp <= 0])
         for g in self.enemies:
             if g.hp <= 0:
@@ -690,12 +721,18 @@ class Game:
                 return x
         return WIDTH / 2  # fallback if the level is extremely crowded
 
+    def hit_player(self, amount):
+        """Damage the player and trigger the hit-flash/screen-shake if it lands."""
+        if self.player.take_damage(amount):
+            self.flash_timer = 0.12
+            self.shake_timer = 0.2
+
     def resolve_boss_attack(self, event):
         """Apply whatever a boss's unleash() just set up in attack_event."""
         p = self.player
         if event["kind"] in ("swing", "wave"):
             if p.pos.distance_to(self.boss.pos) <= event["radius"]:
-                p.take_damage(event["damage"])
+                self.hit_player(event["damage"])
         elif event["kind"] == "summon":
             for _ in range(event["count"]):
                 shadow = Shadow(self.level["enemy_speed"], 15, self.images.get("shadow.png"))
@@ -741,7 +778,9 @@ class Game:
         nearest = min(targets, key=lambda e: p.pos.distance_to(e.pos))
         if p.pos.distance_to(nearest.pos) <= p.attack_range:
             lvl = p.gift("zeus")
-            nearest.apply_damage(p.damage + 5 * lvl)
+            dmg = p.damage + 5 * lvl
+            nearest.apply_damage(dmg)
+            self.damage_numbers.append(DamageNumber(nearest.pos, dmg, GOLD))
             self.bolts.append((p.pos.copy(), nearest.pos.copy(), 0.12))
             p.attack_timer = p.attack_cooldown * (0.85 ** lvl)
 
@@ -791,6 +830,7 @@ class Game:
                     continue
                 if proj.pos.distance_to(t.pos) < proj.radius + t.radius:
                     t.apply_damage(proj.damage)
+                    self.damage_numbers.append(DamageNumber(t.pos, proj.damage, proj.color))
                     proj.already_hit.append(t)
                     if not proj.pierce:
                         proj.alive = False
@@ -827,6 +867,15 @@ class Game:
         self.toast_text = text
         self.toast_timer = duration
 
+    def tick_effects(self, dt):
+        """Advance short-lived visual effects: toast text, hit flash/shake, floating numbers."""
+        self.toast_timer -= dt
+        self.flash_timer -= dt
+        self.shake_timer -= dt
+        for dn in self.damage_numbers:
+            dn.update(dt)
+        self.damage_numbers = [dn for dn in self.damage_numbers if dn.alive]
+
     def choose_gift(self, index):
         if index >= len(self.choices):
             return
@@ -846,7 +895,7 @@ class Game:
         keys = pygame.key.get_pressed()
         p = self.player
         self.run_time += dt
-        self.toast_timer -= dt
+        self.tick_effects(dt)
         p.update(dt, keys, self.walls)
         if self.boss is None:
             self.spawn_enemies(dt)
@@ -861,17 +910,17 @@ class Game:
         for e in self.enemies:
             e.update(dt, p.pos, self.walls)
             if p.pos.distance_to(e.pos) < p.radius + e.radius:
-                p.take_damage(e.damage)
+                self.hit_player(e.damage)
         if self.boss:
             self.boss.update(dt, p.pos, self.walls)
             if p.pos.distance_to(self.boss.pos) < p.radius + self.boss.radius:
-                p.take_damage(self.boss.damage)
+                self.hit_player(self.boss.damage)
             event = self.boss.attack_event
             if event:
                 self.resolve_boss_attack(event)
             for proj in self.boss.projectiles:
                 if proj.alive and p.pos.distance_to(proj.pos) < p.radius + proj.radius:
-                    p.take_damage(proj.damage)
+                    self.hit_player(proj.damage)
                     proj.alive = False
 
         # dead enemies drop XP orbs
@@ -1102,6 +1151,9 @@ class Game:
             pygame.display.flip()
             return
 
+        # draw to a separate surface while shaking, so it can be offset as a whole
+        self.screen = self.shake_surface if self.shake_timer > 0 else self.window
+
         bg = self.images.get(self.level.get("bg_image"))
         if bg:
             self.screen.blit(bg, (0, 0))
@@ -1123,6 +1175,8 @@ class Game:
         for blade in self.sword_positions() if self.player.gift("sword") else []:
             pygame.draw.circle(self.screen, (200, 205, 215), blade, 10)
             pygame.draw.circle(self.screen, WHITE, blade, 10, 2)
+        for dn in self.damage_numbers:
+            dn.draw(self.screen, self.small_font)
         self.player.draw(self.screen)
         if self.show_walls:
             for w in self.walls + ([self.gate] if self.level_index == -1 and not self.gate_open else []):
@@ -1147,6 +1201,17 @@ class Game:
             self.draw_text("Press ENTER for the next level", self.font, WHITE, below)
         elif self.state == "win":
             self.draw_end_screen("YOU WIN", GOLD)
+
+        if self.flash_timer > 0:
+            flash = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+            flash.fill((255, 255, 255, int(160 * self.flash_timer / 0.12)))
+            self.screen.blit(flash, (0, 0))
+
+        if self.screen is self.shake_surface:
+            offset = (random.randint(-8, 8), random.randint(-8, 8))
+            self.window.fill((0, 0, 0))
+            self.window.blit(self.shake_surface, offset)
+            self.screen = self.window
         pygame.display.flip()
 
     # ---- menu navigation ----
@@ -1210,7 +1275,8 @@ class Game:
     def toggle_fullscreen(self):
         self.fullscreen = not self.fullscreen
         flags = pygame.FULLSCREEN if self.fullscreen else 0
-        self.screen = pygame.display.set_mode((WIDTH, HEIGHT), flags)
+        self.window = pygame.display.set_mode((WIDTH, HEIGHT), flags)
+        self.screen = self.window
 
     def handle_key(self, key):
         if self.state == "menu":
