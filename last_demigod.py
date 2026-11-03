@@ -3,6 +3,7 @@
 # 1/2/3 = choose a gift on level-up, P/ESC = pause, R = restart, ENTER = next level.
 # Shapes are placeholders for the Kenney sprites.
 
+import json
 import math
 import os
 import random
@@ -13,6 +14,7 @@ import pygame
 WIDTH, HEIGHT = 1152, 648  # 16:9, same shape as the background pictures
 FPS = 60
 ASSET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
+SAVE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "save.json")
 DEBUG = False  # True shows collision walls with F1
 
 # Every picture the game can use. If a file isn't in assets/, the game falls back
@@ -607,7 +609,19 @@ class Projectile:
 class Game:
     def __init__(self):
         pygame.init()
-        self.window = pygame.display.set_mode((WIDTH, HEIGHT))  # the real OS window
+
+        # settings + best score, loaded before the window so a saved
+        # fullscreen preference can be applied right away
+        self.music_volume = 0.6
+        self.sound_volume = 0.6
+        self.muted = False
+        self.fullscreen = False
+        self.best_level_index = -1  # -1 = never left the prison yet
+        self.best_time = 0.0
+        self.load_game()
+
+        flags = pygame.FULLSCREEN if self.fullscreen else 0
+        self.window = pygame.display.set_mode((WIDTH, HEIGHT), flags)  # the real OS window
         self.screen = self.window                                # what draw() draws to
         self.shake_surface = pygame.Surface((WIDTH, HEIGHT))      # used while screen-shaking
         pygame.display.set_caption("The Last Demigod")
@@ -637,9 +651,6 @@ class Game:
                 path = os.path.join(SOUND_DIR, name + ".wav")
                 if os.path.exists(path):
                     self.sounds[name] = pygame.mixer.Sound(path)
-        self.music_volume = 0.6
-        self.sound_volume = 0.6
-        self.muted = False
         self.current_music = None
 
         self.show_walls = DEBUG  # F1 can still toggle this, see handle_key()
@@ -650,12 +661,53 @@ class Game:
         self.menu_items = ["Start", "Controls", "Settings", "Quit"]
         self.menu_index = 0
         self.settings_index = 0
-        self.fullscreen = False
         self.char_index = 0  # which character is highlighted on the select screen
         self.player_char = "leon"
         self.player = None
         self.pause_items = ["Resume", "Restart level", "Main menu", "Quit"]
         self.pause_index = 0
+
+    def load_game(self):
+        """Read saved settings/best score, if save.json exists. Keeps the
+        defaults already set if the file is missing or can't be read."""
+        try:
+            with open(SAVE_PATH) as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            return
+        self.music_volume = data.get("music_volume", self.music_volume)
+        self.sound_volume = data.get("sound_volume", self.sound_volume)
+        self.muted = data.get("muted", self.muted)
+        self.fullscreen = data.get("fullscreen", self.fullscreen)
+        self.best_level_index = data.get("best_level_index", self.best_level_index)
+        self.best_time = data.get("best_time", self.best_time)
+
+    def save_game(self):
+        data = {
+            "music_volume": self.music_volume,
+            "sound_volume": self.sound_volume,
+            "muted": self.muted,
+            "fullscreen": self.fullscreen,
+            "best_level_index": self.best_level_index,
+            "best_time": self.best_time,
+        }
+        try:
+            with open(SAVE_PATH, "w") as f:
+                json.dump(data, f)
+        except OSError:
+            pass  # can't write to disk here - not worth crashing the game over
+
+    def update_best_score(self):
+        """Called when a run ends (win or death). Keeps the best of all runs."""
+        improved = False
+        if self.level_index > self.best_level_index:
+            self.best_level_index = self.level_index
+            improved = True
+        if self.run_time > self.best_time:
+            self.best_time = self.run_time
+            improved = True
+        if improved:
+            self.save_game()
 
     def reset(self):
         """Full restart from the prison, with whichever character was chosen."""
@@ -723,6 +775,7 @@ class Game:
             self.end_index = 0
             self.state = "gameover"
             self.play_sound("lose")
+            self.update_best_score()
 
     def start_level(self, index):
         self.level_index = index
@@ -932,6 +985,7 @@ class Game:
         if self.mixer_ok:
             pygame.mixer.music.set_volume(0 if self.muted else self.music_volume)
         self.show_toast("Muted" if self.muted else "Unmuted", duration=1.0)
+        self.save_game()
 
     def tick_effects(self, dt):
         """Advance short-lived visual effects: toast text, hit flash/shake, floating numbers."""
@@ -1016,11 +1070,13 @@ class Game:
             else:
                 self.state = "win"
                 self.play_sound("win")
+                self.update_best_score()
 
         if p.hp <= 0:
             self.end_index = 0
             self.state = "gameover"
             self.play_sound("lose")
+            self.update_best_score()
 
     # ---- drawing ----
     def draw_text(self, text, font, color, center):
@@ -1160,9 +1216,18 @@ class Game:
                         (170, 170, 170), (WIDTH // 2, HEIGHT - 40))
 
     def draw_settings(self):
-        items = [f"Fullscreen: {'On' if self.fullscreen else 'Off'}", "Back"]
+        items = [
+            f"Music volume: {round(self.music_volume * 100)}%",
+            f"Sound volume: {round(self.sound_volume * 100)}%",
+            f"Fullscreen: {'On' if self.fullscreen else 'Off'}",
+            "Back",
+        ]
         self.draw_menu_list("SETTINGS", items, self.settings_index,
-                             "LEFT/RIGHT or ENTER to change, ESC to go back")
+                             "LEFT/RIGHT to change, ESC to go back")
+        best_name = LEVELS[self.best_level_index]["name"] if self.best_level_index >= 0 else "The Prison"
+        minutes, seconds = divmod(int(self.best_time), 60)
+        self.draw_text(f"Best: reached {best_name}, survived {minutes:02d}:{seconds:02d}",
+                        self.small_font, CYAN, (WIDTH // 2, 540))
 
     def draw_charselect(self):
         self.draw_menu_background()
@@ -1307,11 +1372,26 @@ class Game:
             pygame.quit()
             sys.exit()
 
-    def activate_settings_item(self, toggle_direction=1):
+    def activate_settings_item(self):
+        if self.settings_index == 2:
+            self.toggle_fullscreen()
+            self.save_game()
+        elif self.settings_index == 3:
+            self.state = "menu"
+
+    def adjust_setting(self, direction):
+        """LEFT/RIGHT on the settings screen: direction is -1 or +1."""
         if self.settings_index == 0:
+            self.music_volume = min(1.0, max(0.0, self.music_volume + 0.1 * direction))
+            if self.mixer_ok and not self.muted:
+                pygame.mixer.music.set_volume(self.music_volume)
+        elif self.settings_index == 1:
+            self.sound_volume = min(1.0, max(0.0, self.sound_volume + 0.1 * direction))
+        elif self.settings_index == 2:
             self.toggle_fullscreen()
         else:
-            self.state = "menu"
+            return  # "Back" has nothing to adjust
+        self.save_game()
 
     def activate_pause_item(self):
         item = self.pause_items[self.pause_index]
@@ -1369,10 +1449,14 @@ class Game:
             return
         if self.state == "settings":
             if key in (pygame.K_UP, pygame.K_w):
-                self.settings_index = self.move_index(self.settings_index, -1, 2)
+                self.settings_index = self.move_index(self.settings_index, -1, 4)
             elif key in (pygame.K_DOWN, pygame.K_s):
-                self.settings_index = self.move_index(self.settings_index, 1, 2)
-            elif key in (pygame.K_RETURN, pygame.K_LEFT, pygame.K_RIGHT):
+                self.settings_index = self.move_index(self.settings_index, 1, 4)
+            elif key == pygame.K_LEFT:
+                self.adjust_setting(-1)
+            elif key == pygame.K_RIGHT:
+                self.adjust_setting(1)
+            elif key == pygame.K_RETURN:
                 self.activate_settings_item()
             elif key == pygame.K_ESCAPE:
                 self.state = "menu"
