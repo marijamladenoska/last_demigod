@@ -248,6 +248,9 @@ CHARACTERS = [
     {"key": "elena", "name": "Elena", "sprite": "elena.png", "vs_folder": "elena", "color": (235, 150, 210)},
 ]
 PLAYER_SPRITE_HEIGHT = 44
+ENEMY_SPRITE_HEIGHT = 50
+BOSS_SPRITE_HEIGHT = 150  # bosses are drawn much bigger than regular enemies
+BOSS_FOLDERS = {"Kampe": "kampe", "Cerberus": "cerberus", "Hera": "hera"}
 
 
 class Player:
@@ -358,6 +361,10 @@ class Enemy:
         self.damage = 8
         self.sprite = sprite    # picture to draw instead of a colored circle
         self.color = color
+        self.anim = None        # walk Animation, set by the Game after creation
+        self.death_anim = None  # Animation played once before removal, if any
+        self.facing_left = False
+        self.dying = False
 
     def hitbox(self, pos=None):
         pos = pos or self.pos
@@ -367,14 +374,29 @@ class Enemy:
     def apply_damage(self, amount):
         self.hp -= amount
 
+    def face(self, direction):
+        """Flip the sprite to face whichever way it's currently moving."""
+        if direction.x != 0:
+            self.facing_left = direction.x < 0
+
     def update(self, dt, target, walls=()):
         direction = target - self.pos
         if direction.length() > 0:
+            self.face(direction)
             step = direction.normalize() * self.speed * dt
             self.pos = move_with_walls(self.pos, step, walls, self.hitbox)
+        if self.anim:
+            self.anim.update(dt)
 
     def draw(self, screen):
-        if self.sprite:
+        frame = None
+        if self.dying and self.death_anim:
+            frame = self.death_anim.current(self.facing_left)
+        elif self.anim:
+            frame = self.anim.current(self.facing_left)
+        if frame:
+            screen.blit(frame, frame.get_rect(center=self.pos))
+        elif self.sprite:
             screen.blit(self.sprite, self.sprite.get_rect(center=self.pos))
         else:
             pygame.draw.circle(screen, self.color, self.pos, self.radius)
@@ -408,18 +430,21 @@ class Harpy(Enemy):
         if direction.length() == 0:
             return
         direction = direction.normalize()
+        self.face(direction)
         perpendicular = pygame.Vector2(-direction.y, direction.x)
         wobble = perpendicular * math.sin(self.wobble_t * 6) * 0.6
         move_dir = direction + wobble
         if move_dir.length() > 0:
             self.pos += move_dir.normalize() * self.speed * dt
+        if self.anim:
+            self.anim.update(dt)
 
 
 class Guard(Enemy):
     """Skeleton guard in the prison. Stands still until the player comes close."""
 
     def __init__(self, pos):
-        super().__init__(speed=85, hp=40)
+        super().__init__(speed=85, hp=40, color=(225, 220, 195))
         self.pos = pygame.Vector2(pos)
         self.radius = 15
         self.awake = False
@@ -431,16 +456,14 @@ class Guard(Enemy):
     def update(self, dt, target, walls=()):
         if self.pos.distance_to(target) < 230:
             self.awake = True
-        if not self.awake:
-            return
-        direction = target - self.pos
-        if direction.length() > 0:
-            step = direction.normalize() * self.speed * dt
-            self.pos = move_with_walls(self.pos, step, walls, self.hitbox)
-
-    def draw(self, screen):
-        pygame.draw.circle(screen, (225, 220, 195), self.pos, self.radius)
-        pygame.draw.circle(screen, (120, 30, 30), self.pos, self.radius, 3)
+        if self.awake:
+            direction = target - self.pos
+            if direction.length() > 0:
+                self.face(direction)
+                step = direction.normalize() * self.speed * dt
+                self.pos = move_with_walls(self.pos, step, walls, self.hitbox)
+        if self.anim:
+            self.anim.update(dt)
 
 
 class Boss:
@@ -457,6 +480,10 @@ class Boss:
         self.color = cfg["color"]
         self.damage = cfg["damage"]
         self.sprite = None
+        self.anim = None            # walk Animation, set by the Game after creation
+        self.death_anim = None      # Animation played once before the level/win screen
+        self.facing_left = False
+        self.dying = False
         self.pos = pygame.Vector2(WIDTH / 2, -50)
         self.projectiles = []       # fireballs etc, reuses the Projectile class
         self.attack_timer = 3.0     # time left until the next attack begins
@@ -492,6 +519,10 @@ class Boss:
 
     def update(self, dt, target, walls=()):
         self.attack_event = None
+        if self.dying:
+            if self.death_anim:
+                self.death_anim.update(dt)
+            return
         if self.stun_timer > 0:
             self.stun_timer -= dt
         elif self.telegraph_timer > 0:
@@ -502,6 +533,8 @@ class Boss:
             self.attack_timer -= dt
             direction = target - self.pos
             if direction.length() > 0:
+                if direction.x != 0:
+                    self.facing_left = direction.x < 0
                 step = direction.normalize() * self.current_speed(dt) * dt
                 self.pos = move_with_walls(self.pos, step, walls, self.hitbox)
             if self.attack_timer <= 0:
@@ -509,12 +542,23 @@ class Boss:
         for proj in self.projectiles:
             proj.update(dt)
         self.projectiles = [p for p in self.projectiles if p.alive]
+        if self.anim:
+            self.anim.update(dt)
 
     def draw(self, screen):
-        color = (255, 255, 255) if self.vulnerable else self.color
-        if self.sprite:
+        frame = None
+        if self.dying and self.death_anim:
+            frame = self.death_anim.current(self.facing_left)
+        elif self.anim:
+            frame = self.anim.current(self.facing_left)
+        if self.vulnerable:
+            pygame.draw.circle(screen, (255, 255, 255), self.pos, self.radius + 10, 4)
+        if frame:
+            screen.blit(frame, frame.get_rect(center=self.pos))
+        elif self.sprite:
             screen.blit(self.sprite, self.sprite.get_rect(center=self.pos))
         else:
+            color = (255, 255, 255) if self.vulnerable else self.color
             pygame.draw.circle(screen, color, self.pos, self.radius)
             pygame.draw.circle(screen, WHITE, self.pos, self.radius, 3)
         for proj in self.projectiles:
@@ -827,6 +871,8 @@ class Game:
         self.level = {"name": "Escape the prison", "bg": (20, 16, 28), "bg_image": "prison.png"}
         self.level_index = -1
         self.enemies = [Guard((x * SX, y * SY)) for x, y in GUARD_SPOTS]
+        for guard in self.enemies:
+            self.attach_animations(guard, "skeleton", ENEMY_SPRITE_HEIGHT)
         self.boss = None
         self.orbs = []
         self.projectiles = []
@@ -845,16 +891,7 @@ class Game:
         p.update(dt, pygame.key.get_pressed(), walls)
         self.banner_timer -= dt
         self.zeus_lightning()
-        for g in self.enemies:
-            g.update(dt, p.pos, walls)
-            if p.pos.distance_to(g.pos) < p.radius + g.radius:
-                self.hit_player(g.damage)
-        dead = [g for g in self.enemies if g.hp <= 0]
-        self.run_kills += len(dead)
-        for g in dead:
-            self.orbs.append(XPOrb(g.pos))
-            self.play_sound("enemy_death")
-        self.enemies = [g for g in self.enemies if g.hp > 0]
+        self.update_enemies_and_deaths(dt, walls)
         self.bolts = [(a, b, t - dt) for a, b, t in self.bolts if t - dt > 0]
         self.collect_orbs(dt)
 
@@ -869,6 +906,32 @@ class Game:
             self.state = "gameover"
             self.play_sound("lose")
             self.update_best_score()
+
+    def update_enemies_and_deaths(self, dt, walls):
+        """Moves every non-dying enemy and applies contact damage, then starts
+        the death animation for anything that just hit 0 hp, and finally
+        removes any enemy whose death animation (if it has one) is done."""
+        p = self.player
+        for e in self.enemies:
+            if e.dying:
+                if e.death_anim:
+                    e.death_anim.update(dt)
+                continue
+            e.update(dt, p.pos, walls)
+            if p.pos.distance_to(e.pos) < p.radius + e.radius:
+                self.hit_player(e.damage)
+
+        newly_dead = [e for e in self.enemies if e.hp <= 0 and not e.dying]
+        self.run_kills += len(newly_dead)
+        for e in newly_dead:
+            self.orbs.append(XPOrb(e.pos))
+            self.play_sound("enemy_death")
+            e.dying = True
+            if e.death_anim:
+                e.death_anim.reset()
+
+        self.enemies = [e for e in self.enemies
+                         if not (e.dying and (not e.death_anim or e.death_anim.finished))]
 
     def start_level(self, index):
         self.level_index = index
@@ -946,10 +1009,23 @@ class Game:
         weights = {"skeleton": 5, "shadow": 1 + rarity, "harpy": rarity}
         kind = random.choices(list(weights), weights=list(weights.values()))[0]
         if kind == "skeleton":
-            return Skeleton(speed, 20, self.images.get("skeleton.png"))
-        if kind == "shadow":
-            return Shadow(speed, 20, self.images.get("shadow.png"))
-        return Harpy(speed, 20, self.images.get("harpy.png"))
+            enemy = Skeleton(speed, 20, self.images.get("skeleton.png"))
+            self.attach_animations(enemy, "skeleton", ENEMY_SPRITE_HEIGHT)
+        elif kind == "shadow":
+            enemy = Shadow(speed, 20, self.images.get("shadow.png"))
+            # a mix of both ghosts, picked per Shadow per the spec
+            ghost = random.choice(["spiritoso", "spiritosa"])
+            enemy.anim = self.get_animation("shadow", ghost, ENEMY_SPRITE_HEIGHT)
+        else:
+            enemy = Harpy(speed, 20, self.images.get("harpy.png"))
+            self.attach_animations(enemy, "harpy", ENEMY_SPRITE_HEIGHT)
+        return enemy
+
+    def attach_animations(self, entity, folder, height):
+        """Gives an Enemy/Boss its walk (looping) and death (one-shot, if the
+        sheet has one) animations, both cached so files are loaded only once."""
+        entity.anim = self.get_animation(folder, "walk", height)
+        entity.death_anim = self.get_animation(folder, "death", height, loop=False)
 
     # ---- weapons ----
     def zeus_lightning(self):
@@ -1121,29 +1197,20 @@ class Game:
         self.ares_sword(dt)
         self.update_projectiles(dt)
 
-        for e in self.enemies:
-            e.update(dt, p.pos, self.walls)
-            if p.pos.distance_to(e.pos) < p.radius + e.radius:
-                self.hit_player(e.damage)
+        self.update_enemies_and_deaths(dt, self.walls)
         if self.boss:
             self.boss.update(dt, p.pos, self.walls)
-            if p.pos.distance_to(self.boss.pos) < p.radius + self.boss.radius:
-                self.hit_player(self.boss.damage)
-            event = self.boss.attack_event
-            if event:
-                self.resolve_boss_attack(event)
-            for proj in self.boss.projectiles:
-                if proj.alive and p.pos.distance_to(proj.pos) < p.radius + proj.radius:
-                    self.hit_player(proj.damage)
-                    proj.alive = False
+            if not self.boss.dying:
+                if p.pos.distance_to(self.boss.pos) < p.radius + self.boss.radius:
+                    self.hit_player(self.boss.damage)
+                event = self.boss.attack_event
+                if event:
+                    self.resolve_boss_attack(event)
+                for proj in self.boss.projectiles:
+                    if proj.alive and p.pos.distance_to(proj.pos) < p.radius + proj.radius:
+                        self.hit_player(proj.damage)
+                        proj.alive = False
 
-        # dead enemies drop XP orbs
-        dead = [e for e in self.enemies if e.hp <= 0]
-        self.run_kills += len(dead)
-        for e in dead:
-            self.orbs.append(XPOrb(e.pos))
-            self.play_sound("enemy_death")
-        self.enemies = [e for e in self.enemies if e.hp > 0]
         self.bolts = [(a, b, t - dt) for a, b, t in self.bolts if t - dt > 0]
         self.collect_orbs(dt)
 
@@ -1154,17 +1221,24 @@ class Game:
                 boss_cfg = self.level["boss"]
                 self.boss = BOSS_CLASSES[boss_cfg["name"]](boss_cfg)
                 self.boss.sprite = self.images.get(boss_cfg["name"].lower() + ".png")
+                self.attach_animations(self.boss, BOSS_FOLDERS[boss_cfg["name"]], BOSS_SPRITE_HEIGHT)
                 self.boss.pos.x = self.clear_spawn_x(self.walls)
                 self.play_sound("boss_spawn")
+        elif self.boss.dying:
+            # let the death animation (if any) finish before moving on
+            if not self.boss.death_anim or self.boss.death_anim.finished:
+                self.run_kills += 1
+                self.end_index = 0
+                if self.level_index < len(LEVELS) - 1:
+                    self.state = "level_done"
+                else:
+                    self.state = "win"
+                    self.play_sound("win")
+                    self.update_best_score()
         elif self.boss.hp <= 0:
-            self.run_kills += 1
-            self.end_index = 0
-            if self.level_index < len(LEVELS) - 1:
-                self.state = "level_done"
-            else:
-                self.state = "win"
-                self.play_sound("win")
-                self.update_best_score()
+            self.boss.dying = True
+            if self.boss.death_anim:
+                self.boss.death_anim.reset()
 
         if p.hp <= 0:
             self.end_index = 0
