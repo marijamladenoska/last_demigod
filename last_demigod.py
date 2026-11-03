@@ -164,7 +164,11 @@ DARK = (15, 12, 22)
 # Blockers for the stone scenery: stairs/altar, pillars, statues, arches, ruins.
 # Trees and the floor's lightning-circle emblem are left walkable on purpose.
 TARTARUS_WALLS = [
-    (545, 0, 580, 175),      # altar steps + the two banner pillars
+    (695, 85, 290, 130),     # altar stairs (solid steps)
+    (625, 40, 70, 165),      # left torch pillar
+    (545, 55, 90, 175),      # left banner
+    (985, 40, 65, 165),      # right torch pillar
+    (1045, 55, 90, 175),     # right banner
     (15, 0, 220, 235),       # top-left broken arch and column
     (1495, 0, 177, 235),     # top-right broken arch and column
     (1250, 85, 85, 180),     # statue, top-right
@@ -260,6 +264,9 @@ CHARACTERS = [
 PLAYER_SPRITE_HEIGHT = 44
 ENEMY_SPRITE_HEIGHT = 50
 BOSS_SPRITE_HEIGHT = 150  # bosses are drawn much bigger than regular enemies
+# Kampe's dragon sprite has a wide wingspan that reads much bigger than its
+# height alone suggests, so it gets a smaller target height than the others.
+BOSS_SPRITE_HEIGHTS = {"Kampe": 105}
 BOSS_FOLDERS = {"Kampe": "kampe", "Cerberus": "cerberus", "Hera": "hera"}
 
 
@@ -982,15 +989,22 @@ class Game:
         self.state = "playing"  # playing / paused / choosing / gameover / level_done / win
         self.play_music(index)
 
-    def clear_spawn_x(self, walls):
-        """An x position whose path down from the top of the screen isn't
-        already blocked by a wall, so a boss never spawns stuck in scenery."""
-        for _ in range(30):
-            x = random.randint(60, WIDTH - 60)
-            probe = pygame.Rect(x - 40, 0, 80, 200)  # the area it falls through
+    def clear_spawn_point(self, walls):
+        """Where a boss appears: prefers the open ground at the top-center of
+        the arena (e.g. the path below the altar stairs), falling back to a
+        random clear spot near the top if that particular point is blocked -
+        so a boss never spawns stuck in scenery, on this level or any other."""
+        probe = pygame.Rect(0, 0, 50, 50)
+        preferred = pygame.Vector2(WIDTH / 2, HEIGHT * 0.32)
+        probe.center = preferred
+        if probe.collidelist(walls) == -1:
+            return preferred
+        for _ in range(40):
+            point = pygame.Vector2(random.randint(60, WIDTH - 60), random.randint(40, HEIGHT // 3))
+            probe.center = point
             if probe.collidelist(walls) == -1:
-                return x
-        return WIDTH / 2  # fallback if the level is extremely crowded
+                return point
+        return pygame.Vector2(WIDTH / 2, 40)  # fallback if the level is extremely crowded
 
     def hit_player(self, amount):
         """Damage the player and trigger the hit-flash/screen-shake if it lands."""
@@ -1251,8 +1265,9 @@ class Game:
                 boss_cfg = self.level["boss"]
                 self.boss = BOSS_CLASSES[boss_cfg["name"]](boss_cfg)
                 self.boss.sprite = self.images.get(boss_cfg["name"].lower() + ".png")
-                self.attach_animations(self.boss, BOSS_FOLDERS[boss_cfg["name"]], BOSS_SPRITE_HEIGHT)
-                self.boss.pos.x = self.clear_spawn_x(self.walls)
+                height = BOSS_SPRITE_HEIGHTS.get(boss_cfg["name"], BOSS_SPRITE_HEIGHT)
+                self.attach_animations(self.boss, BOSS_FOLDERS[boss_cfg["name"]], height)
+                self.boss.pos = self.clear_spawn_point(self.walls)
                 self.play_sound("boss_spawn")
         elif self.boss.dying:
             # let the death animation (if any) finish before moving on
