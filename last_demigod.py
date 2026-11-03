@@ -53,6 +53,71 @@ def img_rect(x, y, w, h):
     return pygame.Rect(round(x * SX), round(y * SY), round(w * SX), round(h * SY))
 
 
+# ---- Vampire Survivors sprite animations (assets/vs/) ----
+VS_DIR = os.path.join(ASSET_DIR, "vs")
+
+
+class Animation:
+    """A sequence of frames played back using the source GIF's own per-frame
+    timing. Call update(dt) every frame, then current(facing_left) to draw."""
+
+    def __init__(self, frames, durations_ms, loop=True):
+        self.frames = frames  # facing right, as downloaded
+        self.flipped = [pygame.transform.flip(f, True, False) for f in frames]
+        self.durations = durations_ms
+        self.loop = loop
+        self.index = 0
+        self.timer_ms = 0.0
+        self.finished = False
+
+    def reset(self):
+        self.index = 0
+        self.timer_ms = 0.0
+        self.finished = False
+
+    def update(self, dt):
+        if self.finished or len(self.frames) <= 1:
+            return
+        self.timer_ms += dt * 1000
+        while self.timer_ms >= self.durations[self.index]:
+            self.timer_ms -= self.durations[self.index]
+            self.index += 1
+            if self.index >= len(self.frames):
+                if self.loop:
+                    self.index = 0
+                else:
+                    self.index = len(self.frames) - 1
+                    self.finished = True
+                    break
+
+    def current(self, facing_left=False):
+        frames = self.flipped if facing_left else self.frames
+        return frames[self.index] if frames else None
+
+
+def load_vs_animation(folder, name, target_height, loop=True):
+    """Loads assets/vs/<folder>/<name>_N.png using that folder's meta.json for
+    per-frame timing, scaled with nearest-neighbour so pixels stay sharp and
+    each frame is target_height tall. Returns None if anything about it is
+    missing, so callers fall back to a plain shape instead of crashing."""
+    meta_path = os.path.join(VS_DIR, folder, "meta.json")
+    if not os.path.exists(meta_path):
+        return None
+    try:
+        with open(meta_path) as f:
+            meta = json.load(f)
+        info = meta[name]
+        frames = []
+        for fname in info["frames"]:
+            img = pygame.image.load(os.path.join(VS_DIR, folder, fname)).convert_alpha()
+            scale = target_height / img.get_height()
+            size = (max(1, round(img.get_width() * scale)), target_height)
+            frames.append(pygame.transform.scale(img, size))
+        return Animation(frames, info["durations_ms"], loop=loop)
+    except (KeyError, OSError, pygame.error):
+        return None
+
+
 # ---- Prison (prologue before level 1) ----
 # Blockers: everything the player and guards cannot walk through.
 PRISON_WALLS = [
