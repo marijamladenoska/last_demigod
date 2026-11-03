@@ -105,7 +105,7 @@ LEVELS = [
         "enemy_speed": 70,
         "spawn_delay": 1.2,
         "boss": {"name": "Kampe", "hp": 300, "speed": 55, "radius": 34,
-                 "color": (150, 60, 170), "damage": 20, "charge": False},
+                 "color": (150, 60, 170), "damage": 20},
     },
     {
         "name": "Level 2: River Styx",
@@ -115,7 +115,7 @@ LEVELS = [
         "enemy_speed": 95,
         "spawn_delay": 1.0,
         "boss": {"name": "Cerberus", "hp": 450, "speed": 75, "radius": 42,
-                 "color": (130, 80, 30), "damage": 25, "charge": True},
+                 "color": (130, 80, 30), "damage": 25},
     },
 ]
 
@@ -240,6 +240,9 @@ class Enemy:
         r = self.radius
         return pygame.Rect(pos.x - r, pos.y - r, r * 2, r * 2)
 
+    def apply_damage(self, amount):
+        self.hp -= amount
+
     def update(self, dt, target, walls=()):
         direction = target - self.pos
         if direction.length() > 0:
@@ -317,6 +320,11 @@ class Guard(Enemy):
 
 
 class Boss:
+    """Base boss: chases the player, then every few seconds winds up a big
+    attack (telegraph_timer, with a warning), fires it (unleash), and stands
+    still for a moment afterward (stun_timer) - that pause is its weak spot,
+    where it takes extra damage. Each boss subclass fills in its own attack."""
+
     def __init__(self, cfg):
         self.name = cfg["name"]
         self.max_hp = self.hp = cfg["hp"]
@@ -324,34 +332,127 @@ class Boss:
         self.radius = cfg["radius"]
         self.color = cfg["color"]
         self.damage = cfg["damage"]
-        self.charges = cfg["charge"]  # Cerberus periodically lunges at the player
+        self.sprite = None
         self.pos = pygame.Vector2(WIDTH / 2, -50)
-        self.charge_timer = 3.0       # counts down to the next lunge
-        self.lunge_left = 0.0
+        self.projectiles = []       # fireballs etc, reuses the Projectile class
+        self.attack_timer = 3.0     # time left until the next attack begins
+        self.telegraph_timer = 0.0  # >0: warning up, hasn't hit yet
+        self.stun_timer = 0.0       # >0: just attacked, standing still (weak spot)
+        self.warning = ""           # text shown on screen while telegraphing
+        self.attack_event = None    # one-frame flag the Game reads to apply a hit
+
+    @property
+    def vulnerable(self):
+        return self.stun_timer > 0
 
     def hitbox(self, pos=None):
         pos = pos or self.pos
         r = self.radius
         return pygame.Rect(pos.x - r, pos.y - r, r * 2, r * 2)
 
+    def apply_damage(self, amount):
+        if self.vulnerable:
+            amount *= 1.5  # the weak spot: bonus damage while stunned
+        self.hp -= amount
+
+    def current_speed(self, dt):
+        return self.speed
+
+    def start_attack(self, target):
+        """Overridden per boss: set self.warning and self.telegraph_timer."""
+
+    def unleash(self, target):
+        """Overridden per boss: actually deal the attack, then stand still."""
+        self.stun_timer = 2.0
+        self.warning = ""
+
     def update(self, dt, target, walls=()):
-        speed = self.speed
-        if self.charges:
-            self.charge_timer -= dt
-            if self.charge_timer <= 0:
-                self.lunge_left = 0.6
-                self.charge_timer = 3.0
-            if self.lunge_left > 0:
-                self.lunge_left -= dt
-                speed *= 3
-        direction = target - self.pos
-        if direction.length() > 0:
-            step = direction.normalize() * speed * dt
-            self.pos = move_with_walls(self.pos, step, walls, self.hitbox)
+        self.attack_event = None
+        if self.stun_timer > 0:
+            self.stun_timer -= dt
+        elif self.telegraph_timer > 0:
+            self.telegraph_timer -= dt
+            if self.telegraph_timer <= 0:
+                self.unleash(target)
+        else:
+            self.attack_timer -= dt
+            direction = target - self.pos
+            if direction.length() > 0:
+                step = direction.normalize() * self.current_speed(dt) * dt
+                self.pos = move_with_walls(self.pos, step, walls, self.hitbox)
+            if self.attack_timer <= 0:
+                self.start_attack(target)
+        for proj in self.projectiles:
+            proj.update(dt)
+        self.projectiles = [p for p in self.projectiles if p.alive]
 
     def draw(self, screen):
-        pygame.draw.circle(screen, self.color, self.pos, self.radius)
-        pygame.draw.circle(screen, WHITE, self.pos, self.radius, 3)
+        color = (255, 255, 255) if self.vulnerable else self.color
+        if self.sprite:
+            screen.blit(self.sprite, self.sprite.get_rect(center=self.pos))
+        else:
+            pygame.draw.circle(screen, color, self.pos, self.radius)
+            pygame.draw.circle(screen, WHITE, self.pos, self.radius, 3)
+        for proj in self.projectiles:
+            proj.draw(screen)
+
+
+class Kampe(Boss):
+    """Winds up, then swings all the way around herself - stay out of range."""
+
+    def start_attack(self, target):
+        self.warning = "Kampe swings!"
+        self.telegraph_timer = 0.9
+
+    def unleash(self, target):
+        self.attack_event = {"kind": "swing", "radius": self.radius + 90, "damage": self.damage}
+        self.stun_timer = 2.0
+        self.warning = ""
+        self.attack_timer = 4.5
+
+    def draw(self, screen):
+        super().draw(screen)
+        if self.telegraph_timer > 0:
+            pygame.draw.circle(screen, (255, 80, 80), self.pos, self.radius + 90, 3)
+
+
+class Cerberus(Boss):
+    """Lunges at the player between attacks, and breathes 3 fireballs."""
+
+    def __init__(self, cfg):
+        super().__init__(cfg)
+        self.lunge_cooldown = 3.0
+        self.lunge_left = 0.0
+
+    def current_speed(self, dt):
+        self.lunge_cooldown -= dt
+        if self.lunge_cooldown <= 0:
+            self.lunge_left = 0.6
+            self.lunge_cooldown = 3.0
+        if self.lunge_left > 0:
+            self.lunge_left -= dt
+            return self.speed * 3
+        return self.speed
+
+    def start_attack(self, target):
+        self.warning = "Cerberus breathes fire!"
+        self.telegraph_timer = 1.0
+
+    def unleash(self, target):
+        direction = target - self.pos
+        if direction.length() == 0:
+            direction = pygame.Vector2(0, 1)
+        direction = direction.normalize()
+        for angle in (-18, 0, 18):
+            self.projectiles.append(Projectile(
+                self.pos, direction.rotate(angle), 260, self.damage * 0.6,
+                (255, 120, 40), length=20))
+        self.stun_timer = 2.0
+        self.warning = ""
+        self.attack_timer = 5.0
+
+
+BOSS_CLASSES = {"Kampe": Kampe, "Cerberus": Cerberus}
 
 
 class XPOrb:
@@ -552,7 +653,7 @@ class Game:
         nearest = min(targets, key=lambda e: p.pos.distance_to(e.pos))
         if p.pos.distance_to(nearest.pos) <= p.attack_range:
             lvl = p.gift("zeus")
-            nearest.hp -= p.damage + 5 * lvl
+            nearest.apply_damage(p.damage + 5 * lvl)
             self.bolts.append((p.pos.copy(), nearest.pos.copy(), 0.12))
             p.attack_timer = p.attack_cooldown * (0.85 ** lvl)
 
@@ -592,7 +693,7 @@ class Game:
         for blade in self.sword_positions():
             for t in self.targets():
                 if blade.distance_to(t.pos) < 14 + t.radius:
-                    t.hp -= 60 * dt  # damage per second while touching
+                    t.apply_damage(60 * dt)  # damage per second while touching
 
     def update_projectiles(self, dt):
         for proj in self.projectiles:
@@ -601,7 +702,7 @@ class Game:
                 if t in proj.already_hit:
                     continue
                 if proj.pos.distance_to(t.pos) < proj.radius + t.radius:
-                    t.hp -= proj.damage
+                    t.apply_damage(proj.damage)
                     proj.already_hit.append(t)
                     if not proj.pierce:
                         proj.alive = False
@@ -669,6 +770,13 @@ class Game:
             self.boss.update(dt, p.pos, self.walls)
             if p.pos.distance_to(self.boss.pos) < p.radius + self.boss.radius:
                 p.take_damage(self.boss.damage)
+            event = self.boss.attack_event
+            if event and event["kind"] == "swing" and p.pos.distance_to(self.boss.pos) <= event["radius"]:
+                p.take_damage(event["damage"])
+            for proj in self.boss.projectiles:
+                if proj.alive and p.pos.distance_to(proj.pos) < p.radius + proj.radius:
+                    p.take_damage(proj.damage)
+                    proj.alive = False
 
         # dead enemies drop XP orbs
         self.run_kills += len([e for e in self.enemies if e.hp <= 0])
@@ -683,7 +791,9 @@ class Game:
         if self.boss is None:
             self.time_left -= dt
             if self.time_left <= 0:
-                self.boss = Boss(self.level["boss"])
+                boss_cfg = self.level["boss"]
+                self.boss = BOSS_CLASSES[boss_cfg["name"]](boss_cfg)
+                self.boss.sprite = self.images.get(boss_cfg["name"].lower() + ".png")
                 self.boss.pos.x = self.clear_spawn_x(self.walls)
         elif self.boss.hp <= 0:
             self.run_kills += 1
@@ -715,6 +825,10 @@ class Game:
             pygame.draw.rect(self.screen, (170, 60, 190),
                              (WIDTH // 2 - bw // 2, 20, bw * max(self.boss.hp, 0) / self.boss.max_hp, 18))
             self.draw_text(self.boss.name, self.font, WHITE, (WIDTH // 2, 55))
+            if self.boss.warning:
+                self.draw_text(self.boss.warning, self.font, (255, 90, 90), (WIDTH // 2, 80))
+            elif self.boss.vulnerable:
+                self.draw_text("Weak spot! Attack now", self.font, (255, 255, 120), (WIDTH // 2, 80))
         else:
             self.draw_text(f"{max(0, math.ceil(self.time_left))}s", self.font, WHITE, (WIDTH // 2, 28))
         if self.banner_timer > 0:
