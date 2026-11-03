@@ -105,6 +105,13 @@ class Animation:
         return frames[self.index] if frames else None
 
 
+# Most of these sprite sheets are drawn facing right by default, so Animation
+# treats its unflipped frames as "facing right." A few (checked by eye, frame
+# by frame) are actually drawn facing left instead - this is where that's
+# recorded, so the loader can swap them back to the right convention on load.
+SPRITE_FACES_LEFT = {"leon", "skeleton"}
+
+
 def load_vs_animation(folder, name, target_height, loop=True):
     """Loads assets/vs/<folder>/<name>_N.png using that folder's meta.json for
     per-frame timing, scaled with nearest-neighbour so pixels stay sharp and
@@ -123,7 +130,10 @@ def load_vs_animation(folder, name, target_height, loop=True):
             scale = target_height / img.get_height()
             size = (max(1, round(img.get_width() * scale)), target_height)
             frames.append(pygame.transform.scale(img, size))
-        return Animation(frames, info["durations_ms"], loop=loop)
+        anim = Animation(frames, info["durations_ms"], loop=loop)
+        if folder in SPRITE_FACES_LEFT:
+            anim.frames, anim.flipped = anim.flipped, anim.frames
+        return anim
     except (KeyError, OSError, pygame.error):
         return None
 
