@@ -55,27 +55,50 @@ Underworld.
 ## Assets
 
 The game runs with simple colored shapes and silence for anything missing from
-`assets/`, so it never crashes if art/sound isn't there. Drop in files with these
-exact names to replace the placeholders:
+`assets/`, so it never crashes if art/sound isn't there. Still missing:
 
 **Images** (`assets/`)
 - `title_screen.png` — main menu background
-- `leon.png`, `elena.png` — playable character sprites
-- `skeleton.png`, `shadow.png`, `harpy.png` — regular enemies
-- `kampe.png`, `cerberus.png`, `hera.png` — bosses
-- `charon.png` — the ferryman NPC
-- `tartarus_arena.png` — Level 1 background (**already in the repo**)
 - `styx_arena.png` — Level 2 background (once added, also add wall rects to
   `STYX_WALLS` near the top of `last_demigod.py`, the same way `TARTARUS_WALLS`
   was done — turn on `F1` with `DEBUG = True` to line them up against the picture)
 - `gates_arena.png` — Level 3 background (same deal, fill in `GATES_WALLS`)
-- `prison.png` — prologue background (**already in the repo**)
+- `tartarus_arena.png`, `prison.png` — already in the repo, untouched
 
 **Sounds** (`assets/sounds/`)
 - `lightning.wav`, `hit.wav`, `enemy_death.wav`, `xp_pickup.wav`, `level_up.wav`,
   `gate_open.wav`, `boss_spawn.wav`, `win.wav`, `lose.wav` — sound effects
 - `music_prison.ogg`, `music_level1.ogg`, `music_level2.ogg`, `music_level3.ogg` —
   background music per scene
+
+Leon, Elena, the enemies, and the bosses now use real sprite animations instead of
+plain shapes (see "Third-party assets" below). Apollo's arrows, Poseidon's trident,
+and Ares' sword are still plain shapes — drop matching icons in `assets/items/` to
+replace them (same missing-file-safe loading as everything else).
+
+## Third-party assets (private use only)
+
+This is a private study project and is not shared or published, so the following
+assets - which belong to other people - were used as reference/placeholder art and
+are **not cleared for any public or commercial release** of this project:
+
+- **Character, enemy, and boss sprites** are from *Vampire Survivors* (poncle), sourced
+  from the community wiki at vampire.survivors.wiki (spriters-resource.com blocked
+  automated downloads, so this was the fallback). None of these are actually named
+  "Leon," "Kampe," etc. in Vampire Survivors - they're reskinned stand-ins:
+  - Leon = **Antonio Belpaese**, Elena = **Imelda Belpaese**
+  - skeleton = **Skeleton**, harpy = **Bat (Pipeestrello)**
+  - shadow = **Spiritoso** / **Spiritosa** (ghost sprites, picked at random per spawn)
+  - Kampe = **Bat Dragon**, Cerberus = **Giant Werewolf**, Hera = **Queen Medusa**
+  - Charon = **The Reaper**
+  - Zeus' lightning hit/pickup icon = the **Lightning Ring** weapon sprite
+  - the XP orb = the game's own **Experience Gem** sprite
+  - Raw downloads are in `assets/vs/`; `_extract_frames.py` is the one-off script
+    that sliced them into the numbered frames the game actually loads.
+- **Font**: `Pixelify Sans` (`assets/fonts/`), which is a separate, freely-licensed
+  (SIL Open Font License) pixel font from Google Fonts chosen to *look* like Vampire
+  Survivors' UI style - it is not Vampire Survivors' actual font, which was not
+  sourced or used here.
 
 ## Credits
 
