@@ -141,6 +141,13 @@ GIFTS = {
 }
 
 
+CHARON_LINES = [
+    "Few demigods make it this far. Fewer make it further.",
+    "The river remembers every soul that crossed it. Don't join them yet.",
+    "Rest a moment. What's ahead doesn't deserve a tired blade.",
+    "Hera knows you're coming now. Hurry.",
+]
+
 CHARACTERS = [
     {"key": "leon", "name": "Leon", "sprite": "leon.png", "color": WHITE},
     {"key": "elena", "name": "Elena", "sprite": "elena.png", "color": (235, 150, 210)},
@@ -547,6 +554,7 @@ class Game:
         self.run_kills = 0
         self.end_items = ["Retry level", "Main menu"]
         self.end_index = 0
+        self.charon_line = ""
         self.start_prison()
 
     # ---- prison prologue ----
@@ -977,7 +985,27 @@ class Game:
         self.draw_text("LEFT/RIGHT to choose, ENTER to confirm, ESC to go back",
                         self.small_font, (170, 170, 170), (WIDTH // 2, HEIGHT - 40))
 
+    def draw_charon(self):
+        self.draw_menu_background()
+        self.draw_text("CHARON", self.big_font, GOLD, (WIDTH // 2, 110))
+        sprite = self.images.get("charon.png")
+        center = (WIDTH // 2, 260)
+        if sprite:
+            self.screen.blit(sprite, sprite.get_rect(center=center))
+        else:
+            pygame.draw.circle(self.screen, (120, 130, 140), center, 45)
+            pygame.draw.circle(self.screen, DARK, center, 45, 3)
+        self.draw_text(f'"{self.charon_line}"', self.font, WHITE, (WIDTH // 2, 380))
+        self.draw_text("Your wounds close. Charon ferries you onward.",
+                        self.small_font, CYAN, (WIDTH // 2, 420))
+        self.draw_text("Press ENTER to continue", self.small_font,
+                        (170, 170, 170), (WIDTH // 2, HEIGHT - 40))
+
     def draw(self):
+        if self.state == "charon":
+            self.draw_charon()
+            pygame.display.flip()
+            return
         if self.state == "menu":
             self.draw_menu()
             pygame.display.flip()
@@ -1085,6 +1113,12 @@ class Game:
         elif item == "Main menu":
             self.state = "menu"
 
+    def enter_charon(self):
+        """Charon ferries you to the next level and heals you while he's at it."""
+        self.player.hp = self.player.max_hp
+        self.charon_line = random.choice(CHARON_LINES)
+        self.state = "charon"
+
     def restart_level(self):
         """Replay the level you died/paused in, not the whole game."""
         if self.level_index == -1:
@@ -1155,6 +1189,8 @@ class Game:
             elif key == pygame.K_RETURN:
                 self.activate_end_item()
         if key == pygame.K_RETURN and self.state == "level_done":
+            self.enter_charon()
+        elif key == pygame.K_RETURN and self.state == "charon":
             self.start_level(self.level_index + 1)
 
     def run(self):
