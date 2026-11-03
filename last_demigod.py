@@ -347,6 +347,8 @@ class Game:
         self.char_index = 0  # which character is highlighted on the select screen
         self.player_char = "leon"
         self.player = None
+        self.pause_items = ["Resume", "Restart level", "Main menu", "Quit"]
+        self.pause_index = 0
 
     def reset(self):
         """Full restart from the prison, with whichever character was chosen."""
@@ -617,6 +619,16 @@ class Game:
         if self.banner_timer > 0 and not self.gate_open:
             self.draw_text("The lightning broke your cell door...", self.font, WHITE, (WIDTH // 2, HEIGHT - 40))
 
+    def draw_paused(self):
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 170))
+        self.screen.blit(overlay, (0, 0))
+        self.draw_text("PAUSED", self.big_font, WHITE, (WIDTH // 2, 170))
+        for i, label in enumerate(self.pause_items):
+            color = GOLD if i == self.pause_index else WHITE
+            text = ("> " + label + " <") if i == self.pause_index else label
+            self.draw_text(text, self.font, color, (WIDTH // 2, 280 + i * 50))
+
     def draw_gift_choice(self):
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 170))
@@ -754,7 +766,7 @@ class Game:
         if self.state == "choosing":
             self.draw_gift_choice()
         elif self.state == "paused":
-            self.draw_text("PAUSED", self.big_font, WHITE, center)
+            self.draw_paused()
         elif self.state == "gameover":
             self.draw_text("YOU DIED", self.big_font, RED, (WIDTH // 2, HEIGHT // 2 - 20))
             self.draw_text("Press R to restart", self.font, WHITE, below)
@@ -791,6 +803,25 @@ class Game:
             self.toggle_fullscreen()
         else:
             self.state = "menu"
+
+    def activate_pause_item(self):
+        item = self.pause_items[self.pause_index]
+        if item == "Resume":
+            self.state = self.prev_state
+        elif item == "Restart level":
+            self.restart_level()
+        elif item == "Main menu":
+            self.state = "menu"
+        elif item == "Quit":
+            pygame.quit()
+            sys.exit()
+
+    def restart_level(self):
+        """Replay the level you died/paused in, not the whole game."""
+        if self.level_index == -1:
+            self.start_prison()
+        else:
+            self.start_level(self.level_index)
 
     def toggle_fullscreen(self):
         self.fullscreen = not self.fullscreen
@@ -829,13 +860,22 @@ class Game:
             elif key == pygame.K_ESCAPE:
                 self.state = "menu"
             return
+        if self.state == "paused":
+            if key in (pygame.K_UP, pygame.K_w):
+                self.pause_index = self.move_index(self.pause_index, -1, len(self.pause_items))
+            elif key in (pygame.K_DOWN, pygame.K_s):
+                self.pause_index = self.move_index(self.pause_index, 1, len(self.pause_items))
+            elif key == pygame.K_RETURN:
+                self.activate_pause_item()
+            elif key in (pygame.K_ESCAPE, pygame.K_p):
+                self.state = self.prev_state
+            return
 
         if key in (pygame.K_ESCAPE, pygame.K_p):
             if self.state in ("playing", "prison"):
                 self.prev_state = self.state
+                self.pause_index = 0
                 self.state = "paused"
-            elif self.state == "paused":
-                self.state = self.prev_state
         if key == pygame.K_F1:
             self.show_walls = not self.show_walls
         if self.state == "choosing" and key in (pygame.K_1, pygame.K_2, pygame.K_3):
