@@ -13,6 +13,7 @@ import pygame
 
 WIDTH, HEIGHT = 1152, 648  # 16:9, same shape as the background pictures
 FPS = 60
+MAX_ENEMIES_ALIVE = 25  # caps the swarm so spawns can't snowball past this
 ASSET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 SAVE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "save.json")
 DEBUG = False  # True shows collision walls with F1
@@ -196,10 +197,10 @@ class Player:
         self.hit_cooldown = 0.0  # short invincibility after being hit
 
         # Zeus lightning (starting weapon)
-        self.attack_cooldown = 0.7
+        self.attack_cooldown = 0.6
         self.attack_timer = 0.0
         self.attack_range = 260
-        self.damage = 10
+        self.damage = 12
 
         # XP and gifts
         self.level = 1
@@ -278,7 +279,7 @@ class Enemy:
         self.radius = 13
         self.speed = speed
         self.hp = hp
-        self.damage = 10
+        self.damage = 8
         self.sprite = sprite    # picture to draw instead of a colored circle
         self.color = color
 
@@ -841,8 +842,9 @@ class Game:
         if self.spawn_timer <= 0:
             step = self.difficulty_step()
             speed = self.level["enemy_speed"] + 25 * step + random.randint(0, 20)
-            for _ in range(1 + step):
-                self.enemies.append(self.make_enemy(speed, step))
+            if len(self.enemies) < MAX_ENEMIES_ALIVE:
+                for _ in range(1 + step):
+                    self.enemies.append(self.make_enemy(speed, step))
             self.spawn_timer = max(0.5, self.level["spawn_delay"] - 0.25 * step)
 
     def make_enemy(self, speed, step):
