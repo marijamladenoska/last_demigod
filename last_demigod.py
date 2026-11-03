@@ -94,6 +94,14 @@ TARTARUS_WALLS = [
     (1570, 385, 77, 100),    # torch pedestal, right edge
 ]
 
+# ---- Level 2: River Styx (styx_arena.png) ----
+# No picture exists yet, so there's nothing to line blockers up against - the
+# level just uses a flat color (see LEVELS below). Once styx_arena.png is
+# added to assets/, place wall rects here the same way TARTARUS_WALLS was
+# done above: turn on F1 in-game to see the rects drawn over the picture,
+# and nudge the numbers until they match the rocks/banks/wreckage in it.
+STYX_WALLS = []
+
 # Each level is just data, so adding level 3 later means adding one dict.
 LEVELS = [
     {
@@ -110,7 +118,8 @@ LEVELS = [
     {
         "name": "Level 2: River Styx",
         "bg": (8, 28, 42),
-        "walls": [],
+        "bg_image": "styx_arena.png",
+        "walls": STYX_WALLS,
         "time": 75,
         "enemy_speed": 95,
         "spawn_delay": 1.0,
