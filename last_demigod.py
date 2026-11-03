@@ -610,6 +610,8 @@ class Game:
         self.end_items = ["Retry level", "Main menu"]
         self.end_index = 0
         self.charon_line = ""
+        self.toast_text = ""
+        self.toast_timer = 0.0
         self.start_prison()
 
     # ---- prison prologue ----
@@ -632,6 +634,7 @@ class Game:
     def update_prison(self, dt):
         p = self.player
         self.run_time += dt
+        self.toast_timer -= dt
         walls = self.walls + ([] if self.gate_open else [self.gate])
         p.update(dt, pygame.key.get_pressed(), walls)
         self.banner_timer -= dt
@@ -812,10 +815,17 @@ class Game:
     def offer_gifts(self):
         available = [k for k in GIFTS if self.player.gift(k) < MAX_GIFT_LEVEL]
         if not available:
+            # every gift is already level 5 - heal instead of doing nothing
+            self.player.hp = min(self.player.max_hp, self.player.hp + 30)
+            self.show_toast("All gifts mastered! Healed instead.")
             return
         self.choices = random.sample(available, min(3, len(available)))
         self.prev_state = self.state
         self.state = "choosing"
+
+    def show_toast(self, text, duration=2.0):
+        self.toast_text = text
+        self.toast_timer = duration
 
     def choose_gift(self, index):
         if index >= len(self.choices):
@@ -836,6 +846,7 @@ class Game:
         keys = pygame.key.get_pressed()
         p = self.player
         self.run_time += dt
+        self.toast_timer -= dt
         p.update(dt, keys, self.walls)
         if self.boss is None:
             self.spawn_enemies(dt)
@@ -1120,6 +1131,8 @@ class Game:
             self.draw_prison_hud()
         else:
             self.draw_hud()
+        if self.toast_timer > 0:
+            self.draw_text(self.toast_text, self.small_font, GOLD, (WIDTH // 2, HEIGHT - 60))
 
         center = (WIDTH // 2, HEIGHT // 2)
         below = (WIDTH // 2, HEIGHT // 2 + 40)
