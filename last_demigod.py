@@ -244,15 +244,17 @@ CHARON_LINES = [
 ]
 
 CHARACTERS = [
-    {"key": "leon", "name": "Leon", "sprite": "leon.png", "color": WHITE},
-    {"key": "elena", "name": "Elena", "sprite": "elena.png", "color": (235, 150, 210)},
+    {"key": "leon", "name": "Leon", "sprite": "leon.png", "vs_folder": "leon", "color": WHITE},
+    {"key": "elena", "name": "Elena", "sprite": "elena.png", "vs_folder": "elena", "color": (235, 150, 210)},
 ]
+PLAYER_SPRITE_HEIGHT = 44
 
 
 class Player:
-    def __init__(self, sprite=None, color=WHITE):
+    def __init__(self, sprite=None, color=WHITE, anim=None):
         self.sprite = sprite          # pygame Surface, or None to draw a circle instead
         self.color = color
+        self.anim = anim              # Animation (walk cycle), takes over from sprite/color
         self.pos = pygame.Vector2(WIDTH / 2, HEIGHT / 2)
         self.facing = pygame.Vector2(1, 0)  # last direction moved (for the trident)
         self.radius = 16
@@ -294,7 +296,8 @@ class Player:
             (keys[pygame.K_d] or keys[pygame.K_RIGHT]) - (keys[pygame.K_a] or keys[pygame.K_LEFT]),
             (keys[pygame.K_s] or keys[pygame.K_DOWN]) - (keys[pygame.K_w] or keys[pygame.K_UP]),
         )
-        if move.length() > 0:
+        moving = move.length() > 0
+        if moving:
             move = move.normalize()  # same speed on diagonals
             self.facing = move
         self.pos = move_with_walls(self.pos, move * self.speed * dt, walls, self.hitbox)
@@ -302,6 +305,11 @@ class Player:
         self.pos.y = max(self.radius, min(HEIGHT - self.radius, self.pos.y))
         self.attack_timer -= dt
         self.hit_cooldown -= dt
+        if self.anim:
+            if moving:
+                self.anim.update(dt)
+            else:
+                self.anim.reset()  # idle: hold the first frame
 
     def draw(self, screen):
         if self.gift("shield"):
@@ -309,7 +317,10 @@ class Player:
         blink = self.hit_cooldown > 0 and int(self.hit_cooldown * 20) % 2 == 0
         if blink:
             return
-        if self.sprite:
+        if self.anim:
+            frame = self.anim.current(facing_left=self.facing.x < 0)
+            screen.blit(frame, frame.get_rect(center=self.pos))
+        elif self.sprite:
             rect = self.sprite.get_rect(center=self.pos)
             screen.blit(self.sprite, rect)
         else:
@@ -705,6 +716,7 @@ class Game:
             path = os.path.join(ASSET_DIR, name)
             if os.path.exists(path):  # game still runs with plain shapes if a sprite is missing
                 self.images[name] = pygame.image.load(path).convert_alpha()
+        self.anim_frame_cache = {}  # (folder, name, height) -> (frames, durations_ms) or None
 
         try:  # some machines have no audio device - the game should still run
             pygame.mixer.init()
@@ -732,6 +744,20 @@ class Game:
         self.player = None
         self.pause_items = ["Resume", "Restart level", "Main menu", "Quit"]
         self.pause_index = 0
+
+    def get_animation(self, folder, name, height, loop=True):
+        """Returns a fresh Animation for this sprite, reusing already-loaded
+        (and already-scaled) frames so the same files aren't read from disk
+        and rescaled every time a new enemy/player is created."""
+        key = (folder, name, height)
+        if key not in self.anim_frame_cache:
+            anim = load_vs_animation(folder, name, height)
+            self.anim_frame_cache[key] = (anim.frames, anim.durations) if anim else None
+        cached = self.anim_frame_cache[key]
+        if cached is None:
+            return None
+        frames, durations = cached
+        return Animation(frames, durations, loop=loop)
 
     def load_game(self):
         """Read saved settings/best score, if save.json exists. Keeps the
@@ -779,7 +805,8 @@ class Game:
         """Full restart from the prison, with whichever character was chosen."""
         char = next(c for c in CHARACTERS if c["key"] == self.player_char)
         sprite = self.images.get(char["sprite"])
-        self.player = Player(sprite=sprite, color=char["color"])
+        anim = self.get_animation(char["vs_folder"], "walk", PLAYER_SPRITE_HEIGHT)
+        self.player = Player(sprite=sprite, color=char["color"], anim=anim)
         self.run_time = 0.0
         self.run_kills = 0
         self.end_items = ["Retry level", "Main menu"]
@@ -1296,6 +1323,23 @@ class Game:
         self.draw_text(f"Best: reached {best_name}, survived {minutes:02d}:{seconds:02d}",
                         self.small_font, CYAN, (WIDTH // 2, 540))
 
+    def charselect_frame(self, folder, height=130):
+        """A time-based animation frame for menu screens, which don't run
+        through update(dt) every tick the way gameplay does."""
+        anim = self.get_animation(folder, "walk", height)
+        if not anim:
+            return None
+        total = sum(anim.durations)
+        if total <= 0:
+            return anim.frames[0]
+        t = pygame.time.get_ticks() % total
+        acc = 0
+        for i, d in enumerate(anim.durations):
+            acc += d
+            if t < acc:
+                return anim.frames[i]
+        return anim.frames[-1]
+
     def draw_charselect(self):
         self.draw_menu_background()
         self.draw_text("CHOOSE YOUR DEMIGOD", self.big_font, GOLD, (WIDTH // 2, 110))
@@ -1307,7 +1351,7 @@ class Game:
             selected = i == self.char_index
             pygame.draw.rect(self.screen, DARK, rect, border_radius=10)
             pygame.draw.rect(self.screen, GOLD if selected else (90, 90, 100), rect, 3, border_radius=10)
-            sprite = self.images.get(char["sprite"])
+            sprite = self.charselect_frame(char["vs_folder"]) or self.images.get(char["sprite"])
             center = (rect.centerx, rect.centery - 30)
             if sprite:
                 self.screen.blit(sprite, sprite.get_rect(center=center))
