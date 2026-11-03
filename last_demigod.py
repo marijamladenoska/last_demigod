@@ -13,6 +13,19 @@ import pygame
 WIDTH, HEIGHT = 1152, 648  # 16:9, same shape as the background pictures
 FPS = 60
 ASSET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
+DEBUG = False  # True shows collision walls with F1
+
+# Every picture the game can use. If a file isn't in assets/, the game falls back
+# to plain shapes/colors instead of crashing. "bg" pictures are stretched to fill
+# the window; "sprite" pictures keep their own size and transparency.
+BACKGROUND_FILES = [
+    "title_screen.png", "prison.png", "tartarus_arena.png",
+    "styx_arena.png", "gates_arena.png",
+]
+SPRITE_FILES = [
+    "leon.png", "elena.png", "skeleton.png", "shadow.png", "harpy.png",
+    "kampe.png", "cerberus.png", "hera.png", "charon.png",
+]
 
 # Background pictures are 1672 x 941. Wall positions below are written in
 # picture pixels and scaled to the window, so they stay correct at any size.
@@ -300,14 +313,25 @@ class Game:
         self.small_font = pygame.font.SysFont(None, 22)
         self.big_font = pygame.font.SysFont(None, 72)
         self.images = {}
-        for name in ("prison.png", "tartarus_arena.png"):
+        for name in BACKGROUND_FILES:
             path = os.path.join(ASSET_DIR, name)
             if os.path.exists(path):  # game still runs with plain colors if a picture is missing
                 self.images[name] = pygame.transform.smoothscale(
                     pygame.image.load(path).convert(), (WIDTH, HEIGHT))
-        self.show_walls = False  # F1 shows the blockers, handy for adjusting them
+        for name in SPRITE_FILES:
+            path = os.path.join(ASSET_DIR, name)
+            if os.path.exists(path):  # game still runs with plain shapes if a sprite is missing
+                self.images[name] = pygame.image.load(path).convert_alpha()
+        self.show_walls = DEBUG  # F1 can still toggle this, see handle_key()
         self.prev_state = "playing"
-        self.reset()
+
+        # main menu
+        self.state = "menu"
+        self.menu_items = ["Start", "Controls", "Settings", "Quit"]
+        self.menu_index = 0
+        self.settings_index = 0
+        self.fullscreen = False
+        self.player = None
 
     def reset(self):
         """Full restart from the prison."""
@@ -596,7 +620,62 @@ class Game:
             label = "NEW" if lvl == 0 else f"Level {lvl} -> {lvl + 1}"
             self.draw_text(label, self.small_font, CYAN, (cx, 380))
 
+    def draw_menu_background(self):
+        bg = self.images.get("title_screen.png")
+        if bg:
+            self.screen.blit(bg, (0, 0))
+        else:
+            self.screen.fill(DARK)
+
+    def draw_menu_list(self, title, items, index, hint=""):
+        self.draw_menu_background()
+        self.draw_text(title, self.big_font, GOLD, (WIDTH // 2, 140))
+        for i, label in enumerate(items):
+            color = GOLD if i == index else WHITE
+            text = ("> " + label + " <") if i == index else label
+            self.draw_text(text, self.font, color, (WIDTH // 2, 280 + i * 50))
+        if hint:
+            self.draw_text(hint, self.small_font, (170, 170, 170), (WIDTH // 2, HEIGHT - 40))
+
+    def draw_menu(self):
+        self.draw_menu_list("THE LAST DEMIGOD", self.menu_items, self.menu_index,
+                             "W/S or arrows to move, ENTER to select")
+
+    def draw_controls(self):
+        self.draw_menu_background()
+        self.draw_text("CONTROLS", self.big_font, GOLD, (WIDTH // 2, 110))
+        lines = [
+            "WASD or Arrow Keys - move",
+            "Attacks happen automatically - just get close to enemies",
+            "1 / 2 / 3 - pick a gift from the gods when you level up",
+            "P or ESC - pause the game",
+            "M - mute/unmute sound",
+            "ENTER - confirm on menus / continue after a cutscene",
+        ]
+        for i, line in enumerate(lines):
+            self.draw_text(line, self.font, WHITE, (WIDTH // 2, 210 + i * 45))
+        self.draw_text("Press ENTER or ESC to go back", self.small_font,
+                        (170, 170, 170), (WIDTH // 2, HEIGHT - 40))
+
+    def draw_settings(self):
+        items = [f"Fullscreen: {'On' if self.fullscreen else 'Off'}", "Back"]
+        self.draw_menu_list("SETTINGS", items, self.settings_index,
+                             "LEFT/RIGHT or ENTER to change, ESC to go back")
+
     def draw(self):
+        if self.state == "menu":
+            self.draw_menu()
+            pygame.display.flip()
+            return
+        if self.state == "controls":
+            self.draw_controls()
+            pygame.display.flip()
+            return
+        if self.state == "settings":
+            self.draw_settings()
+            pygame.display.flip()
+            return
+
         bg = self.images.get(self.level.get("bg_image"))
         if bg:
             self.screen.blit(bg, (0, 0))
@@ -644,6 +723,75 @@ class Game:
             self.draw_text("Press R to restart", self.font, WHITE, below)
         pygame.display.flip()
 
+    # ---- menu navigation ----
+    def move_index(self, index, delta, length):
+        return (index + delta) % length
+
+    def activate_menu_item(self):
+        item = self.menu_items[self.menu_index]
+        if item == "Start":
+            self.reset()
+        elif item == "Controls":
+            self.prev_state = "menu"
+            self.state = "controls"
+        elif item == "Settings":
+            self.settings_index = 0
+            self.prev_state = "menu"
+            self.state = "settings"
+        elif item == "Quit":
+            pygame.quit()
+            sys.exit()
+
+    def activate_settings_item(self, toggle_direction=1):
+        if self.settings_index == 0:
+            self.toggle_fullscreen()
+        else:
+            self.state = "menu"
+
+    def toggle_fullscreen(self):
+        self.fullscreen = not self.fullscreen
+        flags = pygame.FULLSCREEN if self.fullscreen else 0
+        self.screen = pygame.display.set_mode((WIDTH, HEIGHT), flags)
+
+    def handle_key(self, key):
+        if self.state == "menu":
+            if key in (pygame.K_UP, pygame.K_w):
+                self.menu_index = self.move_index(self.menu_index, -1, len(self.menu_items))
+            elif key in (pygame.K_DOWN, pygame.K_s):
+                self.menu_index = self.move_index(self.menu_index, 1, len(self.menu_items))
+            elif key == pygame.K_RETURN:
+                self.activate_menu_item()
+            return
+        if self.state == "controls":
+            if key in (pygame.K_RETURN, pygame.K_ESCAPE):
+                self.state = "menu"
+            return
+        if self.state == "settings":
+            if key in (pygame.K_UP, pygame.K_w):
+                self.settings_index = self.move_index(self.settings_index, -1, 2)
+            elif key in (pygame.K_DOWN, pygame.K_s):
+                self.settings_index = self.move_index(self.settings_index, 1, 2)
+            elif key in (pygame.K_RETURN, pygame.K_LEFT, pygame.K_RIGHT):
+                self.activate_settings_item()
+            elif key == pygame.K_ESCAPE:
+                self.state = "menu"
+            return
+
+        if key in (pygame.K_ESCAPE, pygame.K_p):
+            if self.state in ("playing", "prison"):
+                self.prev_state = self.state
+                self.state = "paused"
+            elif self.state == "paused":
+                self.state = self.prev_state
+        if key == pygame.K_F1:
+            self.show_walls = not self.show_walls
+        if self.state == "choosing" and key in (pygame.K_1, pygame.K_2, pygame.K_3):
+            self.choose_gift(key - pygame.K_1)
+        if key == pygame.K_r and self.state in ("gameover", "win"):
+            self.reset()
+        if key == pygame.K_RETURN and self.state == "level_done":
+            self.start_level(self.level_index + 1)
+
     def run(self):
         while True:
             dt = self.clock.tick(FPS) / 1000
@@ -652,20 +800,7 @@ class Game:
                     pygame.quit()
                     sys.exit()
                 if event.type == pygame.KEYDOWN:
-                    if event.key in (pygame.K_ESCAPE, pygame.K_p):
-                        if self.state in ("playing", "prison"):
-                            self.prev_state = self.state
-                            self.state = "paused"
-                        elif self.state == "paused":
-                            self.state = self.prev_state
-                    if event.key == pygame.K_F1:
-                        self.show_walls = not self.show_walls
-                    if self.state == "choosing" and event.key in (pygame.K_1, pygame.K_2, pygame.K_3):
-                        self.choose_gift(event.key - pygame.K_1)
-                    if event.key == pygame.K_r and self.state in ("gameover", "win"):
-                        self.reset()
-                    if event.key == pygame.K_RETURN and self.state == "level_done":
-                        self.start_level(self.level_index + 1)
+                    self.handle_key(event.key)
             if self.state == "playing":
                 self.update(dt)
             elif self.state == "prison":
