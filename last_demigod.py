@@ -1150,7 +1150,8 @@ class Game:
                 direction = target.pos - self.player.pos
                 if direction.length() > 0:
                     self.projectiles.append(Projectile(self.player.pos, direction, 500, 12, GOLD,
-                                                        sprite=self.weapon_sprites.get("arrows")))
+                                                        sprite=self.weapon_sprites.get("arrows"),
+                                                        sprite_angle_offset=0))
             self.arrow_timer = 1.2
 
     def poseidon_trident(self, dt):
@@ -1161,7 +1162,8 @@ class Game:
         if self.trident_timer <= 0:
             self.projectiles.append(Projectile(self.player.pos, self.player.facing, 420,
                                                15 + 8 * lvl, CYAN, pierce=True, length=30,
-                                               sprite=self.weapon_sprites.get("trident")))
+                                               sprite=self.weapon_sprites.get("trident"),
+                                               sprite_angle_offset=45))
             self.trident_timer = max(0.6, 2.2 - 0.3 * lvl)
 
     def sword_positions(self):
@@ -1623,7 +1625,7 @@ class Game:
         for blade in self.sword_positions() if self.player.gift("sword") else []:
             if sword_sprite:
                 direction = blade - self.player.pos
-                angle = -math.degrees(math.atan2(direction.y, direction.x))
+                angle = -math.degrees(math.atan2(direction.y, direction.x)) + 45
                 rotated = pygame.transform.rotate(sword_sprite, angle)
                 self.screen.blit(rotated, rotated.get_rect(center=blade))
             else:
