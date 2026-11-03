@@ -102,7 +102,11 @@ TARTARUS_WALLS = [
 # and nudge the numbers until they match the rocks/banks/wreckage in it.
 STYX_WALLS = []
 
-# Each level is just data, so adding level 3 later means adding one dict.
+# ---- Level 3: Gates of the Underworld (gates_arena.png) ----
+# Same story as STYX_WALLS: fill this in once the picture exists.
+GATES_WALLS = []
+
+# Each level is just data, so adding a level means adding one dict.
 LEVELS = [
     {
         "name": "Level 1: Tartar",
@@ -125,6 +129,17 @@ LEVELS = [
         "spawn_delay": 1.0,
         "boss": {"name": "Cerberus", "hp": 450, "speed": 75, "radius": 42,
                  "color": (130, 80, 30), "damage": 25},
+    },
+    {
+        "name": "Level 3: Gates of the Underworld",
+        "bg": (30, 8, 14),
+        "bg_image": "gates_arena.png",
+        "walls": GATES_WALLS,
+        "time": 90,             # the longest, hardest wave before the final boss
+        "enemy_speed": 115,
+        "spawn_delay": 0.8,
+        "boss": {"name": "Hera", "hp": 600, "speed": 65, "radius": 38,
+                 "color": (210, 170, 40), "damage": 28},
     },
 ]
 
@@ -468,7 +483,47 @@ class Cerberus(Boss):
         self.attack_timer = 5.0
 
 
-BOSS_CLASSES = {"Kampe": Kampe, "Cerberus": Cerberus}
+class Hera(Boss):
+    """Final boss: cycles through three attacks - a feather volley, summoning
+    shadows, and a wave of divine energy - then stands still afterward."""
+
+    ATTACKS = ["feathers", "summon", "wave"]
+
+    def __init__(self, cfg):
+        super().__init__(cfg)
+        self.attack_index = 0
+        self.pending_attack = "feathers"
+
+    def start_attack(self, target):
+        self.pending_attack = self.ATTACKS[self.attack_index % len(self.ATTACKS)]
+        self.attack_index += 1
+        self.warning = {
+            "feathers": "Hera hurls peacock feathers!",
+            "summon": "Hera summons shadows!",
+            "wave": "Hera unleashes a wave of energy!",
+        }[self.pending_attack]
+        self.telegraph_timer = 1.1
+
+    def unleash(self, target):
+        if self.pending_attack == "feathers":
+            direction = target - self.pos
+            if direction.length() == 0:
+                direction = pygame.Vector2(0, 1)
+            direction = direction.normalize()
+            for angle in (-40, -20, 0, 20, 40):
+                self.projectiles.append(Projectile(
+                    self.pos, direction.rotate(angle), 300, self.damage * 0.5,
+                    (160, 90, 200), length=18))
+        elif self.pending_attack == "summon":
+            self.attack_event = {"kind": "summon", "count": 3}
+        else:
+            self.attack_event = {"kind": "wave", "radius": self.radius + 130, "damage": self.damage}
+        self.stun_timer = 2.0
+        self.warning = ""
+        self.attack_timer = 5.5
+
+
+BOSS_CLASSES = {"Kampe": Kampe, "Cerberus": Cerberus, "Hera": Hera}
 
 
 class XPOrb:
@@ -632,6 +687,19 @@ class Game:
                 return x
         return WIDTH / 2  # fallback if the level is extremely crowded
 
+    def resolve_boss_attack(self, event):
+        """Apply whatever a boss's unleash() just set up in attack_event."""
+        p = self.player
+        if event["kind"] in ("swing", "wave"):
+            if p.pos.distance_to(self.boss.pos) <= event["radius"]:
+                p.take_damage(event["damage"])
+        elif event["kind"] == "summon":
+            for _ in range(event["count"]):
+                shadow = Shadow(self.level["enemy_speed"], 15, self.images.get("shadow.png"))
+                offset = pygame.Vector2(random.randint(-60, 60), random.randint(-60, 60))
+                shadow.pos = self.boss.pos + offset
+                self.enemies.append(shadow)
+
     def targets(self):
         return self.enemies + ([self.boss] if self.boss else [])
 
@@ -788,8 +856,8 @@ class Game:
             if p.pos.distance_to(self.boss.pos) < p.radius + self.boss.radius:
                 p.take_damage(self.boss.damage)
             event = self.boss.attack_event
-            if event and event["kind"] == "swing" and p.pos.distance_to(self.boss.pos) <= event["radius"]:
-                p.take_damage(event["damage"])
+            if event:
+                self.resolve_boss_attack(event)
             for proj in self.boss.projectiles:
                 if proj.alive and p.pos.distance_to(proj.pos) < p.radius + proj.radius:
                     p.take_damage(proj.damage)
