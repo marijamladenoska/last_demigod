@@ -233,10 +233,16 @@ class Enemy:
         self.hp = hp
         self.damage = 10
 
-    def update(self, dt, target):
+    def hitbox(self, pos=None):
+        pos = pos or self.pos
+        r = self.radius
+        return pygame.Rect(pos.x - r, pos.y - r, r * 2, r * 2)
+
+    def update(self, dt, target, walls=()):
         direction = target - self.pos
         if direction.length() > 0:
-            self.pos += direction.normalize() * self.speed * dt
+            step = direction.normalize() * self.speed * dt
+            self.pos = move_with_walls(self.pos, step, walls, self.hitbox)
 
     def draw(self, screen):
         pygame.draw.circle(screen, RED, self.pos, self.radius)
@@ -283,7 +289,12 @@ class Boss:
         self.charge_timer = 3.0       # counts down to the next lunge
         self.lunge_left = 0.0
 
-    def update(self, dt, target):
+    def hitbox(self, pos=None):
+        pos = pos or self.pos
+        r = self.radius
+        return pygame.Rect(pos.x - r, pos.y - r, r * 2, r * 2)
+
+    def update(self, dt, target, walls=()):
         speed = self.speed
         if self.charges:
             self.charge_timer -= dt
@@ -295,7 +306,8 @@ class Boss:
                 speed *= 3
         direction = target - self.pos
         if direction.length() > 0:
-            self.pos += direction.normalize() * speed * dt
+            step = direction.normalize() * speed * dt
+            self.pos = move_with_walls(self.pos, step, walls, self.hitbox)
 
     def draw(self, screen):
         pygame.draw.circle(screen, self.color, self.pos, self.radius)
@@ -452,6 +464,16 @@ class Game:
         self.banner_timer = 2.5  # shows the level name for a moment
         self.state = "playing"  # playing / paused / choosing / gameover / level_done / win
 
+    def clear_spawn_x(self, walls):
+        """An x position whose path down from the top of the screen isn't
+        already blocked by a wall, so a boss never spawns stuck in scenery."""
+        for _ in range(30):
+            x = random.randint(60, WIDTH - 60)
+            probe = pygame.Rect(x - 40, 0, 80, 200)  # the area it falls through
+            if probe.collidelist(walls) == -1:
+                return x
+        return WIDTH / 2  # fallback if the level is extremely crowded
+
     def targets(self):
         return self.enemies + ([self.boss] if self.boss else [])
 
@@ -588,11 +610,11 @@ class Game:
         self.update_projectiles(dt)
 
         for e in self.enemies:
-            e.update(dt, p.pos)
+            e.update(dt, p.pos, self.walls)
             if p.pos.distance_to(e.pos) < p.radius + e.radius:
                 p.take_damage(e.damage)
         if self.boss:
-            self.boss.update(dt, p.pos)
+            self.boss.update(dt, p.pos, self.walls)
             if p.pos.distance_to(self.boss.pos) < p.radius + self.boss.radius:
                 p.take_damage(self.boss.damage)
 
@@ -610,6 +632,7 @@ class Game:
             self.time_left -= dt
             if self.time_left <= 0:
                 self.boss = Boss(self.level["boss"])
+                self.boss.pos.x = self.clear_spawn_x(self.walls)
         elif self.boss.hp <= 0:
             self.run_kills += 1
             self.end_index = 0
