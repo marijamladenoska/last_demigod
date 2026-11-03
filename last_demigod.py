@@ -70,12 +70,37 @@ GREEN = (70, 200, 110)
 CYAN = (90, 230, 230)
 DARK = (15, 12, 22)
 
+# ---- Level 1: Tartarus arena (tartarus_arena.png) ----
+# Blockers for the stone scenery: stairs/altar, pillars, statues, arches, ruins.
+# Trees and the floor's lightning-circle emblem are left walkable on purpose.
+TARTARUS_WALLS = [
+    (545, 0, 580, 175),      # altar steps + the two banner pillars
+    (15, 0, 220, 235),       # top-left broken arch and column
+    (1495, 0, 177, 235),     # top-right broken arch and column
+    (1250, 85, 85, 180),     # statue, top-right
+    (248, 695, 90, 210),     # statue, bottom-left
+    (195, 230, 165, 105),    # stepped ruin pile, left-mid
+    (538, 335, 45, 95),      # lone column, left-mid
+    (552, 590, 70, 100),     # lone column + rubble, left-mid-low
+    (995, 295, 45, 110),     # lone column, right of altar
+    (1055, 595, 48, 90),     # lone column, right-mid-low
+    (95, 550, 140, 105),     # column + rubble cluster, lower-left
+    (1385, 540, 85, 115),    # column + fallen log cluster, right
+    (1020, 690, 90, 80),     # small column + hedge cluster, lower-mid-right
+    (1265, 720, 175, 170),   # broken arch, bottom-right
+    (1530, 265, 50, 125),    # column near the trees, right edge
+    (1510, 585, 55, 110),    # column, lower-right edge
+    (25, 385, 75, 100),      # torch pedestal, left edge
+    (1570, 385, 77, 100),    # torch pedestal, right edge
+]
+
 # Each level is just data, so adding level 3 later means adding one dict.
 LEVELS = [
     {
         "name": "Level 1: Tartar",
         "bg": (24, 18, 32),
         "bg_image": "tartarus_arena.png",
+        "walls": TARTARUS_WALLS,
         "time": 60,            # seconds to survive before the boss appears
         "enemy_speed": 70,
         "spawn_delay": 1.2,
@@ -85,6 +110,7 @@ LEVELS = [
     {
         "name": "Level 2: River Styx",
         "bg": (8, 28, 42),
+        "walls": [],
         "time": 75,
         "enemy_speed": 95,
         "spawn_delay": 1.0,
@@ -407,9 +433,9 @@ class Game:
             self.state = "gameover"
 
     def start_level(self, index):
-        self.walls = []
         self.level_index = index
         self.level = LEVELS[index]
+        self.walls = [img_rect(*r) for r in self.level["walls"]]
         self.enemies = []
         self.boss = None
         self.orbs = []
@@ -550,7 +576,7 @@ class Game:
         keys = pygame.key.get_pressed()
         p = self.player
         self.run_time += dt
-        p.update(dt, keys)
+        p.update(dt, keys, self.walls)
         if self.boss is None:
             self.spawn_enemies(dt)
         self.banner_timer -= dt
