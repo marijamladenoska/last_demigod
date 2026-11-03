@@ -59,10 +59,15 @@ The game runs with simple colored shapes and silence for anything missing from
 
 **Images** (`assets/`)
 - `title_screen.png` — main menu background
-- `styx_arena.png` — Level 2 background (once added, also add wall rects to
-  `STYX_WALLS` near the top of `last_demigod.py`, the same way `TARTARUS_WALLS`
-  was done — turn on `F1` with `DEBUG = True` to line them up against the picture)
-- `gates_arena.png` — Level 3 background (same deal, fill in `GATES_WALLS`)
+- `styx_arena.png` — Level 2 background. There's already a styx_arena.png in the
+  repo and it's untouched; I looked for a better fit (Vampire Survivors stage art
+  and free dark top-down dungeon packs) but didn't find anything both top-down and
+  16:9 that matched the painted style of the existing backgrounds closely enough to
+  be worth swapping in — happy to try again with a specific picture if you have one.
+- `gates_arena.png` — Level 3 background. Same story as styx_arena.png - not found.
+- Once either exists, add wall rects for it to `STYX_WALLS`/`GATES_WALLS` near the
+  top of `last_demigod.py`, the same way `TARTARUS_WALLS` was done — turn on `F1`
+  with `DEBUG = True` to line them up against the picture.
 - `tartarus_arena.png`, `prison.png` — already in the repo, untouched
 
 **Sounds** (`assets/sounds/`)
@@ -71,10 +76,12 @@ The game runs with simple colored shapes and silence for anything missing from
 - `music_prison.ogg`, `music_level1.ogg`, `music_level2.ogg`, `music_level3.ogg` —
   background music per scene
 
-Leon, Elena, the enemies, and the bosses now use real sprite animations instead of
-plain shapes (see "Third-party assets" below). Apollo's arrows, Poseidon's trident,
-and Ares' sword are still plain shapes — drop matching icons in `assets/items/` to
-replace them (same missing-file-safe loading as everything else).
+Leon, Elena, the enemies, and the bosses all use real sprite animations now. Zeus'
+lightning, Poseidon's trident, Ares' sword, Apollo's arrows, Athena's shield, Hermes'
+sandals, and Ambrosia all show real Vampire Survivors weapon/item icons too, both on
+the gift cards and in play (projectiles and the orbiting sword rotate to face the
+direction they're moving). There's no in-game health-potion pickup to attach the
+Floor Chicken icon to, so that one's downloaded but unused.
 
 ## Third-party assets (private use only)
 
@@ -91,7 +98,9 @@ are **not cleared for any public or commercial release** of this project:
   - shadow = **Spiritoso** / **Spiritosa** (ghost sprites, picked at random per spawn)
   - Kampe = **Bat Dragon**, Cerberus = **Giant Werewolf**, Hera = **Queen Medusa**
   - Charon = **The Reaper**
-  - Zeus' lightning hit/pickup icon = the **Lightning Ring** weapon sprite
+  - Zeus' Lightning = **Lightning Ring**, Poseidon's Trident = **Santa Javelin**,
+    Ares' Sword = **Night Sword**, Apollo's Arrows = **Knife**, Athena's Shield =
+    **Laurel**, Hermes' Sandals = **Wings**, Ambrosia = **Hollow Heart**
   - the XP orb = the game's own **Experience Gem** sprite
   - Raw downloads are in `assets/vs/`; `_extract_frames.py` is the one-off script
     that sliced them into the numbered frames the game actually loads.
