@@ -688,6 +688,8 @@ class DamageNumber:
 
 
 class XPOrb:
+    sprite = None  # set once by the Game, shared by every orb
+
     def __init__(self, pos, value=1):
         self.pos = pygame.Vector2(pos)
         self.value = value
@@ -700,7 +702,10 @@ class XPOrb:
             self.pos += (player.pos - self.pos).normalize() * 300 * dt
 
     def draw(self, screen):
-        pygame.draw.circle(screen, CYAN, self.pos, self.radius)
+        if self.sprite:
+            screen.blit(self.sprite, self.sprite.get_rect(center=self.pos))
+        else:
+            pygame.draw.circle(screen, CYAN, self.pos, self.radius)
 
 
 class Projectile:
@@ -761,6 +766,19 @@ class Game:
             if os.path.exists(path):  # game still runs with plain shapes if a sprite is missing
                 self.images[name] = pygame.image.load(path).convert_alpha()
         self.anim_frame_cache = {}  # (folder, name, height) -> (frames, durations_ms) or None
+
+        # a couple of one-off VS icons that aren't full walk/death animations
+        gem_path = os.path.join(VS_DIR, "gem", "xp.png")
+        if os.path.exists(gem_path):
+            img = pygame.image.load(gem_path).convert_alpha()
+            scale = 22 / img.get_height()
+            XPOrb.sprite = pygame.transform.scale(img, (max(1, round(img.get_width() * scale)), 22))
+        lightning_path = os.path.join(VS_DIR, "lightning", "pickup.png")
+        self.lightning_hit_sprite = None
+        if os.path.exists(lightning_path):
+            img = pygame.image.load(lightning_path).convert_alpha()
+            scale = 28 / img.get_height()
+            self.lightning_hit_sprite = pygame.transform.scale(img, (max(1, round(img.get_width() * scale)), 28))
 
         try:  # some machines have no audio device - the game should still run
             pygame.mixer.init()
@@ -1397,7 +1415,7 @@ class Game:
         self.draw_text(f"Best: reached {best_name}, survived {minutes:02d}:{seconds:02d}",
                         self.small_font, CYAN, (WIDTH // 2, 540))
 
-    def charselect_frame(self, folder, height=130):
+    def menu_anim_frame(self, folder, height=130):
         """A time-based animation frame for menu screens, which don't run
         through update(dt) every tick the way gameplay does."""
         anim = self.get_animation(folder, "walk", height)
@@ -1425,7 +1443,7 @@ class Game:
             selected = i == self.char_index
             pygame.draw.rect(self.screen, DARK, rect, border_radius=10)
             pygame.draw.rect(self.screen, GOLD if selected else (90, 90, 100), rect, 3, border_radius=10)
-            sprite = self.charselect_frame(char["vs_folder"]) or self.images.get(char["sprite"])
+            sprite = self.menu_anim_frame(char["vs_folder"]) or self.images.get(char["sprite"])
             center = (rect.centerx, rect.centery - 30)
             if sprite:
                 self.screen.blit(sprite, sprite.get_rect(center=center))
@@ -1439,7 +1457,7 @@ class Game:
     def draw_charon(self):
         self.draw_menu_background()
         self.draw_text("CHARON", self.big_font, GOLD, (WIDTH // 2, 110))
-        sprite = self.images.get("charon.png")
+        sprite = self.menu_anim_frame("charon", height=140) or self.images.get("charon.png")
         center = (WIDTH // 2, 260)
         if sprite:
             self.screen.blit(sprite, sprite.get_rect(center=center))
@@ -1495,6 +1513,8 @@ class Game:
             proj.draw(self.screen)
         for a, b, _ in self.bolts:
             pygame.draw.line(self.screen, GOLD, a, b, 4)
+            if self.lightning_hit_sprite:
+                self.screen.blit(self.lightning_hit_sprite, self.lightning_hit_sprite.get_rect(center=b))
         for blade in self.sword_positions() if self.player.gift("sword") else []:
             pygame.draw.circle(self.screen, (200, 205, 215), blade, 10)
             pygame.draw.circle(self.screen, WHITE, blade, 10, 2)
