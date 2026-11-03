@@ -106,8 +106,16 @@ GIFTS = {
 }
 
 
+CHARACTERS = [
+    {"key": "leon", "name": "Leon", "sprite": "leon.png", "color": WHITE},
+    {"key": "elena", "name": "Elena", "sprite": "elena.png", "color": (235, 150, 210)},
+]
+
+
 class Player:
-    def __init__(self):
+    def __init__(self, sprite=None, color=WHITE):
+        self.sprite = sprite          # pygame Surface, or None to draw a circle instead
+        self.color = color
         self.pos = pygame.Vector2(WIDTH / 2, HEIGHT / 2)
         self.facing = pygame.Vector2(1, 0)  # last direction moved (for the trident)
         self.radius = 16
@@ -160,8 +168,13 @@ class Player:
         if self.gift("shield"):
             pygame.draw.circle(screen, (200, 200, 120), self.pos, self.radius + 6, 2)
         blink = self.hit_cooldown > 0 and int(self.hit_cooldown * 20) % 2 == 0
-        if not blink:
-            pygame.draw.circle(screen, WHITE, self.pos, self.radius)
+        if blink:
+            return
+        if self.sprite:
+            rect = self.sprite.get_rect(center=self.pos)
+            screen.blit(self.sprite, rect)
+        else:
+            pygame.draw.circle(screen, self.color, self.pos, self.radius)
             pygame.draw.circle(screen, BLUE, self.pos, self.radius, 3)
 
 
@@ -331,11 +344,15 @@ class Game:
         self.menu_index = 0
         self.settings_index = 0
         self.fullscreen = False
+        self.char_index = 0  # which character is highlighted on the select screen
+        self.player_char = "leon"
         self.player = None
 
     def reset(self):
-        """Full restart from the prison."""
-        self.player = Player()
+        """Full restart from the prison, with whichever character was chosen."""
+        char = next(c for c in CHARACTERS if c["key"] == self.player_char)
+        sprite = self.images.get(char["sprite"])
+        self.player = Player(sprite=sprite, color=char["color"])
         self.start_prison()
 
     # ---- prison prologue ----
@@ -662,6 +679,28 @@ class Game:
         self.draw_menu_list("SETTINGS", items, self.settings_index,
                              "LEFT/RIGHT or ENTER to change, ESC to go back")
 
+    def draw_charselect(self):
+        self.draw_menu_background()
+        self.draw_text("CHOOSE YOUR DEMIGOD", self.big_font, GOLD, (WIDTH // 2, 110))
+        card_w, card_h, gap = 260, 320, 60
+        start_x = WIDTH // 2 - (2 * card_w + gap) // 2
+        for i, char in enumerate(CHARACTERS):
+            x = start_x + i * (card_w + gap)
+            rect = pygame.Rect(x, 190, card_w, card_h)
+            selected = i == self.char_index
+            pygame.draw.rect(self.screen, DARK, rect, border_radius=10)
+            pygame.draw.rect(self.screen, GOLD if selected else (90, 90, 100), rect, 3, border_radius=10)
+            sprite = self.images.get(char["sprite"])
+            center = (rect.centerx, rect.centery - 30)
+            if sprite:
+                self.screen.blit(sprite, sprite.get_rect(center=center))
+            else:
+                pygame.draw.circle(self.screen, char["color"], center, 40)
+                pygame.draw.circle(self.screen, BLUE, center, 40, 3)
+            self.draw_text(char["name"], self.font, WHITE, (rect.centerx, rect.bottom - 40))
+        self.draw_text("LEFT/RIGHT to choose, ENTER to confirm, ESC to go back",
+                        self.small_font, (170, 170, 170), (WIDTH // 2, HEIGHT - 40))
+
     def draw(self):
         if self.state == "menu":
             self.draw_menu()
@@ -673,6 +712,10 @@ class Game:
             return
         if self.state == "settings":
             self.draw_settings()
+            pygame.display.flip()
+            return
+        if self.state == "charselect":
+            self.draw_charselect()
             pygame.display.flip()
             return
 
@@ -730,7 +773,8 @@ class Game:
     def activate_menu_item(self):
         item = self.menu_items[self.menu_index]
         if item == "Start":
-            self.reset()
+            self.char_index = 0
+            self.state = "charselect"
         elif item == "Controls":
             self.prev_state = "menu"
             self.state = "controls"
@@ -773,6 +817,15 @@ class Game:
                 self.settings_index = self.move_index(self.settings_index, 1, 2)
             elif key in (pygame.K_RETURN, pygame.K_LEFT, pygame.K_RIGHT):
                 self.activate_settings_item()
+            elif key == pygame.K_ESCAPE:
+                self.state = "menu"
+            return
+        if self.state == "charselect":
+            if key in (pygame.K_LEFT, pygame.K_a, pygame.K_RIGHT, pygame.K_d):
+                self.char_index = 1 - self.char_index  # only two characters, so just flip
+            elif key == pygame.K_RETURN:
+                self.player_char = CHARACTERS[self.char_index]["key"]
+                self.reset()
             elif key == pygame.K_ESCAPE:
                 self.state = "menu"
             return
