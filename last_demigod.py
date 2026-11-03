@@ -355,6 +355,10 @@ class Game:
         char = next(c for c in CHARACTERS if c["key"] == self.player_char)
         sprite = self.images.get(char["sprite"])
         self.player = Player(sprite=sprite, color=char["color"])
+        self.run_time = 0.0
+        self.run_kills = 0
+        self.end_items = ["Retry level", "Main menu"]
+        self.end_index = 0
         self.start_prison()
 
     # ---- prison prologue ----
@@ -376,6 +380,7 @@ class Game:
 
     def update_prison(self, dt):
         p = self.player
+        self.run_time += dt
         walls = self.walls + ([] if self.gate_open else [self.gate])
         p.update(dt, pygame.key.get_pressed(), walls)
         self.banner_timer -= dt
@@ -384,6 +389,7 @@ class Game:
             g.update(dt, p.pos, walls)
             if p.pos.distance_to(g.pos) < p.radius + g.radius:
                 p.take_damage(g.damage)
+        self.run_kills += len([g for g in self.enemies if g.hp <= 0])
         for g in self.enemies:
             if g.hp <= 0:
                 self.orbs.append(XPOrb(g.pos))
@@ -397,6 +403,7 @@ class Game:
         if self.gate_open and p.pos.y > PRISON_EXIT_Y * SY:
             self.start_level(0)
         if p.hp <= 0:
+            self.end_index = 0
             self.state = "gameover"
 
     def start_level(self, index):
@@ -542,6 +549,7 @@ class Game:
     def update(self, dt):
         keys = pygame.key.get_pressed()
         p = self.player
+        self.run_time += dt
         p.update(dt, keys)
         if self.boss is None:
             self.spawn_enemies(dt)
@@ -563,6 +571,7 @@ class Game:
                 p.take_damage(self.boss.damage)
 
         # dead enemies drop XP orbs
+        self.run_kills += len([e for e in self.enemies if e.hp <= 0])
         for e in self.enemies:
             if e.hp <= 0:
                 self.orbs.append(XPOrb(e.pos))
@@ -576,9 +585,12 @@ class Game:
             if self.time_left <= 0:
                 self.boss = Boss(self.level["boss"])
         elif self.boss.hp <= 0:
+            self.run_kills += 1
+            self.end_index = 0
             self.state = "level_done" if self.level_index < len(LEVELS) - 1 else "win"
 
         if p.hp <= 0:
+            self.end_index = 0
             self.state = "gameover"
 
     # ---- drawing ----
@@ -618,6 +630,34 @@ class Game:
         self.draw_text(goal, self.font, GOLD, (WIDTH // 2, 28))
         if self.banner_timer > 0 and not self.gate_open:
             self.draw_text("The lightning broke your cell door...", self.font, WHITE, (WIDTH // 2, HEIGHT - 40))
+
+    def gift_summary(self):
+        parts = [f"{GIFTS[k]['name']} Lv{v}" for k, v in self.player.gifts.items()]
+        if not parts:
+            return "none"
+        if len(parts) > 4:
+            parts = parts[:4] + [f"+{len(parts) - 4} more"]
+        return ", ".join(parts)
+
+    def draw_end_screen(self, title, color):
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 170))
+        self.screen.blit(overlay, (0, 0))
+        self.draw_text(title, self.big_font, color, (WIDTH // 2, 100))
+        level_name = self.level["name"] if self.level_index >= 0 else "The Prison"
+        minutes, seconds = divmod(int(self.run_time), 60)
+        stats = [
+            f"Reached: {level_name}",
+            f"Time survived: {minutes:02d}:{seconds:02d}",
+            f"Enemies defeated: {self.run_kills}",
+            f"Gifts: {self.gift_summary()}",
+        ]
+        for i, line in enumerate(stats):
+            self.draw_text(line, self.small_font, WHITE, (WIDTH // 2, 210 + i * 30))
+        for i, label in enumerate(self.end_items):
+            item_color = GOLD if i == self.end_index else WHITE
+            text = ("> " + label + " <") if i == self.end_index else label
+            self.draw_text(text, self.font, item_color, (WIDTH // 2, 380 + i * 50))
 
     def draw_paused(self):
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
@@ -768,14 +808,12 @@ class Game:
         elif self.state == "paused":
             self.draw_paused()
         elif self.state == "gameover":
-            self.draw_text("YOU DIED", self.big_font, RED, (WIDTH // 2, HEIGHT // 2 - 20))
-            self.draw_text("Press R to restart", self.font, WHITE, below)
+            self.draw_end_screen("YOU DIED", RED)
         elif self.state == "level_done":
             self.draw_text(f"{self.boss.name} DEFEATED", self.big_font, GOLD, (WIDTH // 2, HEIGHT // 2 - 20))
             self.draw_text("Press ENTER for the next level", self.font, WHITE, below)
         elif self.state == "win":
-            self.draw_text("YOU WIN", self.big_font, GOLD, (WIDTH // 2, HEIGHT // 2 - 20))
-            self.draw_text("Press R to restart", self.font, WHITE, below)
+            self.draw_end_screen("YOU WIN", GOLD)
         pygame.display.flip()
 
     # ---- menu navigation ----
@@ -815,6 +853,13 @@ class Game:
         elif item == "Quit":
             pygame.quit()
             sys.exit()
+
+    def activate_end_item(self):
+        item = self.end_items[self.end_index]
+        if item == "Retry level":
+            self.restart_level()
+        elif item == "Main menu":
+            self.state = "menu"
 
     def restart_level(self):
         """Replay the level you died/paused in, not the whole game."""
@@ -880,8 +925,11 @@ class Game:
             self.show_walls = not self.show_walls
         if self.state == "choosing" and key in (pygame.K_1, pygame.K_2, pygame.K_3):
             self.choose_gift(key - pygame.K_1)
-        if key == pygame.K_r and self.state in ("gameover", "win"):
-            self.reset()
+        if self.state in ("gameover", "win"):
+            if key in (pygame.K_UP, pygame.K_w, pygame.K_DOWN, pygame.K_s):
+                self.end_index = self.move_index(self.end_index, 1, len(self.end_items))
+            elif key == pygame.K_RETURN:
+                self.activate_end_item()
         if key == pygame.K_RETURN and self.state == "level_done":
             self.start_level(self.level_index + 1)
 
